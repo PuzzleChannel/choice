@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "daily_playtime_rewards",
+  "version": "${version}",
+  "name": "Daily Playtime Rewards",
+  "description": "Daily playtime tracking and server-authoritative milestone rewards.",
+  "authors": ["PuzzleChannel"],
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.puzzlechannel.playtimerewards.PlaytimeRewards"],
+    "client": ["dev.puzzlechannel.playtimerewards.client.PlaytimeRewardsClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "vmtrade": "*"
+  }
+}
