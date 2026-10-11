@@ -6,13 +6,12 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.KeyMapping;
-import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 public final class PlaytimeRewardsClient implements ClientModInitializer {
     private static final KeyMapping.Category CATEGORY =
-            KeyMapping.Category.register(Identifier.of("daily_playtime_rewards", "general"));
+            KeyMapping.Category.register(Identifier.parse("daily_playtime_rewards:general"));
     private static final KeyMapping OPEN_MENU = KeyBindingHelper.registerKeyBinding(
             new KeyMapping("key.daily_playtime_rewards.open", GLFW.GLFW_KEY_P, CATEGORY));
 
