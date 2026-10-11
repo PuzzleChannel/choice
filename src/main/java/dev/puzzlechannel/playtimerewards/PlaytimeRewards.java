@@ -104,6 +104,10 @@ public final class PlaytimeRewards implements ModInitializer {
                                                         context.getSource().sendFailure(Component.literal("Возьми предмет в основную руку."));
                                                         return 0;
                                                     }
+                                                    if (count > held.getMaxStackSize()) {
+                                                        context.getSource().sendFailure(Component.literal("Количество превышает максимальный размер стака предмета: " + held.getMaxStackSize() + "."));
+                                                        return 0;
+                                                    }
                                                     REWARDS[index] = new Reward(BuiltInRegistries.ITEM.getKey(held.getItem()).toString(), count);
                                                     saveData();
                                                     context.getSource().sendSuccess(() -> Component.literal(
@@ -191,7 +195,8 @@ public final class PlaytimeRewards implements ModInitializer {
     private static boolean hasRoom(ServerPlayer player, ItemStack incoming) {
         int remaining = incoming.getCount();
         var inventory = player.getInventory();
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
+        // Inventory.add() inserts only into the 36 main inventory slots, not armor/offhand.
+        for (int i = 0; i < 36; i++) {
             ItemStack existing = inventory.getItem(i);
             if (existing.isEmpty()) {
                 remaining -= incoming.getMaxStackSize();
