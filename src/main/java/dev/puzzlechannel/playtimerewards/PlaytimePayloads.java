@@ -8,9 +8,9 @@ import net.minecraft.resources.Identifier;
 
 public final class PlaytimePayloads {
     public static final CustomPacketPayload.Type<State> STATE_TYPE =
-            new CustomPacketPayload.Type<>(Identifier.of("daily_playtime_rewards", "state"));
+            new CustomPacketPayload.Type<>(Identifier.parse("daily_playtime_rewards:state"));
     public static final CustomPacketPayload.Type<Claim> CLAIM_TYPE =
-            new CustomPacketPayload.Type<>(Identifier.of("daily_playtime_rewards", "claim"));
+            new CustomPacketPayload.Type<>(Identifier.parse("daily_playtime_rewards:claim"));
 
     public record State(int seconds, int claimedMask) implements CustomPacketPayload {
         public static final StreamCodec<RegistryFriendlyByteBuf, State> CODEC = StreamCodec.composite(
