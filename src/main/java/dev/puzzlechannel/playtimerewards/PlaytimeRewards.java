@@ -79,7 +79,7 @@ public final class PlaytimeRewards implements ModInitializer {
             if (tickCounter % 20 == 0) {
                 for (ServerPlayer player : s.getPlayerList().getPlayers()) {
                     PlayerRecord record = getRecord(player);
-                    record.seconds = Math.min(record.seconds + 1, THRESHOLDS[3]);
+                    record.seconds = Math.min(record.seconds + 1, 86400);
                     sendState(player, record);
                 }
                 saveData();
@@ -223,7 +223,7 @@ public final class PlaytimeRewards implements ModInitializer {
                     JsonObject value = element.getAsJsonObject();
                     UUID uuid = UUID.fromString(value.get("uuid").getAsString());
                     PlayerRecord record = new PlayerRecord();
-                    record.seconds = Math.max(0, Math.min(THRESHOLDS[3], value.get("seconds").getAsInt()));
+                    record.seconds = Math.max(0, Math.min(86400, value.get("seconds").getAsInt()));
                     record.claimedMask = value.get("claimed").getAsInt() & 0b1111;
                     record.date = value.get("date").getAsString();
                     PLAYERS.put(uuid, record);
