@@ -14,14 +14,13 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.Commands;
-import net.minecraft.core.registries.Registries;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -60,13 +59,14 @@ public final class PlaytimeRewards implements ModInitializer {
             REWARDS[i] = new Reward(DEFAULT_ITEMS[i], DEFAULT_COUNTS[i]);
         }
 
-        PayloadTypeRegistry.playS2C().register(PlaytimePayloads.STATE_TYPE, PlaytimePayloads.State.CODEC);
-        PayloadTypeRegistry.playC2S().register(PlaytimePayloads.CLAIM_TYPE, PlaytimePayloads.Claim.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(PlaytimePayloads.STATE_TYPE, PlaytimePayloads.State.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(PlaytimePayloads.CLAIM_TYPE, PlaytimePayloads.Claim.CODEC);
 
         ServerLifecycleEvents.SERVER_STARTED.register(s -> {
             server = s;
             dataPath = FabricLoader.getInstance().getConfigDir().resolve("daily-playtime-rewards.json");
             loadData();
+            for (ServerPlayer player : s.getPlayerList().getPlayers()) sendState(player, getRecord(player));
         });
         ServerLifecycleEvents.SERVER_STOPPING.register(s -> {
             saveData();
@@ -91,7 +91,7 @@ public final class PlaytimeRewards implements ModInitializer {
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 dispatcher.register(Commands.literal("playtimerewards")
-                        .requires(source -> source.hasPermission(2))
+                        .requires(source -> Commands.hasPermission(Commands.LEVEL_GAMEMASTERS).test(source))
                         .then(Commands.literal("set")
                                 .then(Commands.argument("reward", IntegerArgumentType.integer(1, 4))
                                         .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
@@ -156,13 +156,13 @@ public final class PlaytimeRewards implements ModInitializer {
 
         Reward reward = REWARDS[index];
         Identifier itemIdentifier = Identifier.tryParse(reward.itemId);
-        if (itemIdentifier == null || !BuiltInRegistries.ITEM.containsKey(itemIdentifier)) {
-            player.sendSystemMessage(Component.literal("Предмет награды не найден: " + reward.itemId));
+        if (itemIdentifier == null) {
+            player.sendSystemMessage(Component.literal("Неверный идентификатор предмета: " + reward.itemId));
             return;
         }
-        Item item = BuiltInRegistries.ITEM.get(itemIdentifier);
-        if (item == net.minecraft.world.item.Items.AIR) {
-            player.sendSystemMessage(Component.literal("Предмет награды недоступен: " + reward.itemId + ". Проверь, загружен ли VMTrade."));
+        Item item = BuiltInRegistries.ITEM.getValue(itemIdentifier);
+        if (item == null || item == net.minecraft.world.item.Items.AIR) {
+            player.sendSystemMessage(Component.literal("Предмет награды недоступен: " + reward.itemId + ". Проверь, загружен ли нужный мод."));
             return;
         }
 
@@ -172,25 +172,27 @@ public final class PlaytimeRewards implements ModInitializer {
             return;
         }
 
-        // Persist the claim before inventory mutation: after a crash this can never be claimed twice.
+        // Persist the claim before inventory mutation to prevent duplicate claims after a crash.
         record.claimedMask |= bit;
         saveData();
         boolean inserted = player.getInventory().add(stack);
         if (!inserted || !stack.isEmpty()) {
-            // The capacity check should prevent this; do not drop leftovers into the world.
+            // The preflight capacity check should prevent this; never drop leftovers into the world.
             record.claimedMask &= ~bit;
             saveData();
             player.sendSystemMessage(Component.literal("Не удалось выдать предмет. Попробуй освободить место в инвентаре."));
             sendState(player, record);
             return;
         }
-        player.sendSystemMessage(Component.literal("Получена награда за " + (THRESHOLDS[index] / 60) + " мин. игры!"));
+        player.sendSystemMessage(Component.literal("Награда получена!"));
         sendState(player, record);
     }
 
     private static boolean hasRoom(ServerPlayer player, ItemStack incoming) {
         int remaining = incoming.getCount();
-        for (ItemStack existing : player.getInventory().items) {
+        var inventory = player.getInventory();
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack existing = inventory.getItem(i);
             if (existing.isEmpty()) {
                 remaining -= incoming.getMaxStackSize();
             } else if (ItemStack.isSameItemSameComponents(existing, incoming)) {
