@@ -21,13 +21,9 @@ public final class RewardsScreen extends Screen {
     private static final int ACCENT = 0xFFE58A3A;
     private static final int TEXT = 0xFFF4E8D9;
     private static final int MUTED = 0xFFB9A18D;
-    private final int initialSeconds;
-    private final int initialClaimedMask;
 
     public RewardsScreen(int seconds, int claimedMask) {
         super(Component.literal("Ежедневные награды"));
-        this.initialSeconds = seconds;
-        this.initialClaimedMask = claimedMask;
     }
 
     @Override
@@ -48,7 +44,7 @@ public final class RewardsScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
         graphics.fill(0, 0, this.width, this.height, BACKGROUND);
         int seconds = PlaytimeRewardsClient.dailySeconds();
         int claimed = PlaytimeRewardsClient.claimedMask();
@@ -58,14 +54,14 @@ public final class RewardsScreen extends Screen {
         int startX = (this.width - totalWidth) / 2;
         int cardY = Math.max(88, this.height / 2 - 60);
 
-        drawCentered(graphics, "ЕЖЕДНЕВНЫЕ НАГРАДЫ", this.width / 2, 25, ACCENT);
-        drawCentered(graphics, "ИГРАЙ НА СЕРВЕРЕ — ПОЛУЧАЙ ПОЛЕЗНЫЕ ПРЕДМЕТЫ", this.width / 2, 43, MUTED);
+        graphics.centeredText(this.font, "ЕЖЕДНЕВНЫЕ НАГРАДЫ", this.width / 2, 25, ACCENT);
+        graphics.centeredText(this.font, "ИГРАЙ НА СЕРВЕРЕ — ПОЛУЧАЙ ПОЛЕЗНЫЕ ПРЕДМЕТЫ", this.width / 2, 43, MUTED);
 
         graphics.fill(this.width / 2 - 150, 59, this.width / 2 + 150, 78, PANEL);
         graphics.fill(this.width / 2 - 148, 61, this.width / 2 + 148, 76, 0xFF171411);
         int progress = Math.min(296, (int) (296.0 * seconds / THRESHOLDS[3]));
         graphics.fill(this.width / 2 - 148, 61, this.width / 2 - 148 + progress, 76, ACCENT);
-        drawCentered(graphics, formatTime(seconds) + " / 04:00:00", this.width / 2, 82, TEXT);
+        graphics.centeredText(this.font, formatTime(seconds) + " / 04:00:00", this.width / 2, 82, TEXT);
 
         for (int i = 0; i < 4; i++) {
             int x = startX + i * (cardWidth + gap);
@@ -75,12 +71,12 @@ public final class RewardsScreen extends Screen {
             graphics.fill(x, cardY, x + cardWidth, cardY + 142, PANEL_EDGE);
             graphics.fill(x + 1, cardY + 1, x + cardWidth - 1, cardY + 141, PANEL);
             graphics.fill(x + 1, cardY + 1, x + cardWidth - 1, cardY + 4, ACCENT);
-            drawCentered(graphics, SUBTITLES[i], x + cardWidth / 2, cardY + 15, MUTED);
-            drawCentered(graphics, TITLES[i], x + cardWidth / 2, cardY + 38, TEXT);
-            drawCentered(graphics, String.format("%02d:%02d:00", threshold / 3600, (threshold % 3600) / 60),
+            graphics.centeredText(this.font, SUBTITLES[i], x + cardWidth / 2, cardY + 15, MUTED);
+            graphics.centeredText(this.font, TITLES[i], x + cardWidth / 2, cardY + 38, TEXT);
+            graphics.centeredText(this.font, String.format("%02d:%02d:00", threshold / 3600, (threshold % 3600) / 60),
                     x + cardWidth / 2, cardY + 57, ACCENT);
             String status = claimedAlready ? "ПОЛУЧЕНО" : unlocked ? "ДОСТУПНО" : "ЗАКРЫТО";
-            drawCentered(graphics, status, x + cardWidth / 2, cardY + 81,
+            graphics.centeredText(this.font, status, x + cardWidth / 2, cardY + 81,
                     claimedAlready ? 0xFF83C783 : unlocked ? ACCENT : MUTED);
             int barX = x + 12;
             int barY = cardY + 96;
@@ -89,13 +85,7 @@ public final class RewardsScreen extends Screen {
             graphics.fill(barX, barY, barX + fill, barY + 5, claimedAlready ? 0xFF83C783 : ACCENT);
         }
 
-        super.render(graphics, mouseX, mouseY, delta);
-        // Keep the local constructor snapshot referenced for diagnostics and compatibility with screen reopening.
-        if (initialSeconds < 0 || initialClaimedMask < 0) return;
-    }
-
-    private void drawCentered(GuiGraphicsExtractor graphics, String text, int centerX, int y, int color) {
-        graphics.drawString(this.font, text, centerX - this.font.width(text) / 2, y, color);
+        super.extractRenderState(graphics, mouseX, mouseY, delta);
     }
 
     private static String formatTime(int seconds) {
