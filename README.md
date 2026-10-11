@@ -17,4 +17,4 @@ Fabric mod for Minecraft 26.2. Tracks daily playtime and offers four server-auth
 Run `gradle build` with Java 25. The GitHub Actions workflow builds the project on pushes and pull requests.
 
 ## Notes
-The server is authoritative for playtime, reward claims, and persistence. Daily reset uses the server's configured system time zone. Reward claims are recorded before inventory delivery to prevent duplicate claims; delivery is rolled back if the item cannot be inserted. Custom reward items are configurable by operators using `/playtimerewards set <1-4> <item-id> <count>`.
+The server is authoritative for playtime, reward claims, and persistence. Daily reset uses the server's configured system time zone. Reward claims are recorded before inventory delivery to prevent duplicate claims; delivery is rolled back if the item cannot be inserted. Operators hold the desired item in their main hand and use `/playtimerewards set <1-4> <count>`. This changes only the reward definition; existing player timers and claim records remain intact. `/playtimerewards save` forces a data save, and `/playtimerewards reload` reloads the saved data.
