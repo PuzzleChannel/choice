@@ -37,6 +37,7 @@ import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 public final class PlaytimeRewards implements ModInitializer {
     public static final String MOD_ID = "daily_playtime_rewards";
@@ -60,6 +61,8 @@ public final class PlaytimeRewards implements ModInitializer {
     private static ZoneId resetZone = ZoneId.systemDefault();
     private static int tickCounter;
     private static boolean dataLoadFailed;
+    private static final ClaimRequestLimiter CLAIM_REQUEST_LIMITER =
+            new ClaimRequestLimiter(TimeUnit.MILLISECONDS.toNanos(500));
 
     private static final class PlayerRecord {
         int seconds;
@@ -96,7 +99,10 @@ public final class PlaytimeRewards implements ModInitializer {
             notifyReadyRewards(handler.player, record);
             sendState(handler.player, record);
         }));
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, s) -> saveData());
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, s) -> {
+            CLAIM_REQUEST_LIMITER.clear(handler.player.getUUID());
+            saveData();
+        });
 
         ServerTickEvents.END_SERVER_TICK.register(s -> {
             if (server == null) server = s;
@@ -113,8 +119,19 @@ public final class PlaytimeRewards implements ModInitializer {
             if (tickCounter % 1200 == 0) saveData();
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(PlaytimePayloads.CLAIM_TYPE, (payload, context) ->
-                context.server().execute(() -> claimReward(context.player(), payload.rewardIndex())));
+        ServerPlayNetworking.registerGlobalReceiver(PlaytimePayloads.CLAIM_TYPE, (payload, context) -> {
+            ServerPlayer player = context.player();
+
+            // Throttle on the network thread, before enqueueing work on the main server
+            // thread. This prevents packet bursts from filling the server task queue.
+            if (!CLAIM_REQUEST_LIMITER.tryAcquire(player.getUUID(), System.nanoTime())) return;
+
+            context.server().execute(() -> {
+                // A queued packet must not grant items after its sender has disconnected.
+                if (context.server().getPlayerList().getPlayer(player.getUUID()) != player) return;
+                claimReward(player, payload.rewardIndex());
+            });
+        });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 dispatcher.register(Commands.literal("playtimerewards")
@@ -317,11 +334,18 @@ public final class PlaytimeRewards implements ModInitializer {
             return;
         }
         ItemStack stack = new ItemStack(item, reward.count);
+        if (reward.count < 1 || reward.count > stack.getMaxStackSize()) {
+            player.sendSystemMessage(Component.literal("Настройка награды некорректна: количество превышает размер стака предмета."));
+            return;
+        }
         if (!hasRoom(player, stack)) {
             player.sendSystemMessage(Component.literal("Освободи место в инвентаре, затем забери награду."));
             return;
         }
 
+        // Keep a rollback snapshot in case another mod causes a partial inventory insert.
+        // Never clear the claim bit while any part of the reward might remain in inventory.
+        ItemStack[] inventoryBefore = snapshotMainInventory(player);
         record.claimedMask |= bit;
         if (!saveData()) {
             record.claimedMask &= ~bit;
@@ -329,26 +353,63 @@ public final class PlaytimeRewards implements ModInitializer {
             sendState(player, record);
             return;
         }
-        boolean inserted = player.getInventory().add(stack);
-        if (!inserted || !stack.isEmpty()) {
+
+        boolean inserted;
+        try {
+            inserted = player.getInventory().add(stack) && stack.isEmpty();
+        } catch (RuntimeException exception) {
+            inserted = false;
+            System.err.println("[Daily Playtime Rewards] Inventory insertion failed for "
+                    + player.getUUID() + ": " + exception.getMessage());
+        }
+        if (!inserted) {
+            restoreMainInventory(player, inventoryBefore);
+            int claimedMaskBeforeRollback = record.claimedMask;
             record.claimedMask &= ~bit;
-            saveData();
-            player.sendSystemMessage(Component.literal("Не удалось выдать предмет. Попробуй освободить место в инвентаре."));
+            if (!saveData()) {
+                // The persisted claim bit is still set. Keep it set in memory as well,
+                // so a later retry cannot duplicate a partially delivered reward.
+                record.claimedMask = claimedMaskBeforeRollback;
+            }
+            player.sendSystemMessage(Component.literal(
+                    (record.claimedMask & bit) != 0
+                            ? "Выдача отменена безопасно, но запись о получении не удалось откатить. Обратись к администратору."
+                            : "Выдача отменена безопасно. Освободи место и попробуй снова."));
             sendState(player, record);
             return;
         }
+
         player.sendSystemMessage(Component.literal("Награда получена!"));
         sendState(player, record);
     }
 
+    private static ItemStack[] snapshotMainInventory(ServerPlayer player) {
+        ItemStack[] snapshot = new ItemStack[36];
+        for (int i = 0; i < snapshot.length; i++) {
+            snapshot[i] = player.getInventory().getItem(i).copy();
+        }
+        return snapshot;
+    }
+
+    private static void restoreMainInventory(ServerPlayer player, ItemStack[] snapshot) {
+        var inventory = player.getInventory();
+        for (int i = 0; i < snapshot.length; i++) {
+            inventory.setItem(i, snapshot[i].copy());
+        }
+    }
+
     private static boolean hasRoom(ServerPlayer player, ItemStack incoming) {
         int remaining = incoming.getCount();
+        int stackLimit = incoming.getMaxStackSize();
         var inventory = player.getInventory();
         for (int i = 0; i < 36; i++) {
             ItemStack existing = inventory.getItem(i);
-            if (existing.isEmpty()) remaining -= incoming.getMaxStackSize();
-            else if (ItemStack.isSameItemSameComponents(existing, incoming))
-                remaining -= Math.max(0, existing.getMaxStackSize() - existing.getCount());
+            if (existing.isEmpty()) {
+                remaining -= stackLimit;
+            } else if (ItemStack.isSameItemSameComponents(existing, incoming)) {
+                int compatibleLimit = Math.min(existing.getMaxStackSize(), stackLimit);
+                remaining -= Math.max(0, compatibleLimit - existing.getCount());
+            }
             if (remaining <= 0) return true;
         }
         return false;
@@ -389,8 +450,16 @@ public final class PlaytimeRewards implements ModInitializer {
                     if ("vmtrade:vmutcoin".equals(item)) item = "vmtrade:vmcoin";
                     int count = value.has("count") ? value.get("count").getAsInt() : DEFAULT_COUNTS[i];
                     String description = descriptionFor(item);
-                    if (count < 1 || count > 64 || Identifier.tryParse(item) == null)
+                    Identifier parsedItem = Identifier.tryParse(item);
+                    if (count < 1 || count > 64 || parsedItem == null)
                         throw new IllegalArgumentException("invalid reward " + (i + 1));
+                    Item registeredItem = BuiltInRegistries.ITEM.getValue(parsedItem);
+                    // VMTrade is optional; keep a valid identifier if its item is currently unavailable.
+                    // If the item is registered, however, reject impossible oversized stacks at load time.
+                    if (registeredItem != null && registeredItem != net.minecraft.world.item.Items.AIR
+                            && count > new ItemStack(registeredItem).getMaxStackSize()) {
+                        throw new IllegalArgumentException("reward " + (i + 1) + " count exceeds the item's maximum stack size");
+                    }
                     loadedRewards[i] = new Reward(item, count, description);
                 }
             }
