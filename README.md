@@ -26,7 +26,7 @@ All commands below require operator permission.
 - `/playtimerewards save` — save current data.
 - `/playtimerewards reload` — reload the saved data.
 
-Press **P** to open the reward screen. When a reward becomes available, the player receives a chat notification with a clickable **[OPEN REWARDS]** link that opens the same screen. Each card displays the actual item icon and quantity (including VMTrade coin), required playtime, progress, and claim status. Only `vmtrade:vmutcoin` has a description: “Используется для обмена на Маркете”. The top of the screen shows a countdown to the next daily reset.
+Press **P** to open the reward screen. When a reward becomes available, the player receives a chat notification with a clickable **[ОТКРЫТЬ НАГРАДЫ]** link that opens the same screen. Each card displays the actual item icon and quantity (including VMTrade coin), required playtime, progress, and claim status. Only `vmtrade:vmutcoin` has a description: “Используется для обмена на Маркете”. The top of the screen shows a countdown to the next daily reset.
 
 ## Automated tests
 
