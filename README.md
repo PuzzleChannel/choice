@@ -14,12 +14,12 @@ The schedule repeats every week using the configured server reset time zone: Mon
 | Day | 30 minutes — modest | 1 hour — better | 2 hours — excellent | 4 hours — always |
 |---|---|---|---|---|
 | Monday | 8 bread | 12 cooked beef | 1 golden apple | 1 VMTrade coin |
-| Tuesday | 16 baked potatoes | 24 torches | 2 ender pearls | 1 VMTrade coin |
-| Wednesday | 10 cooked chicken | 24 arrows | 1 shield | 1 VMTrade coin |
-| Thursday | 12 cooked porkchops | 6 golden carrots | 1 crossbow | 1 VMTrade coin |
+| Tuesday | 16 baked potatoes | 24 cooked cod | 2 ender pearls | 1 VMTrade coin |
+| Wednesday | 10 cooked chicken | 24 golden carrots | 1 golden apple | 1 VMTrade coin |
+| Thursday | 12 cooked porkchops | 6 golden carrots | 1 enchanted golden apple | 1 VMTrade coin |
 | Friday | 16 bread | 16 cooked beef | 8 experience bottles | 1 VMTrade coin |
-| Saturday | 20 baked potatoes | 32 torches | 2 golden apples | 1 VMTrade coin |
-| Sunday | 12 cooked salmon | 32 arrows | 4 ender pearls | 1 VMTrade coin |
+| Saturday | 20 baked potatoes | 32 cooked cod | 2 golden apples | 1 VMTrade coin |
+| Sunday | 12 cooked salmon | 32 golden carrots | 4 ender pearls | 1 VMTrade coin |
 
 ## Build
 On Windows, run `gradlew.bat build` from the project root. On Linux/macOS, run `./gradlew build`. Java 25 is required. The first build downloads Gradle and dependencies. The mod jar and sources jar are written to `build/libs/`. GitHub Actions builds the project and uploads the jar as an artifact when the build succeeds.
