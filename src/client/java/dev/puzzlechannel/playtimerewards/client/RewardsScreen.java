@@ -137,6 +137,7 @@ public final class RewardsScreen extends Screen {
             int y = startY() + row * (ch + gap());
             int threshold = PlaytimeRewardsClient.threshold(i);
             boolean claimedAlready = (claimed & (1 << i)) != 0, unlocked = seconds >= threshold;
+            claimButtons[i].setMessage(Component.literal(claimedAlready ? "ПОЛУЧЕНО" : unlocked ? "ЗАБРАТЬ" : "ЗАКРЫТО"));
             claimButtons[i].active = unlocked && !claimedAlready
                     && !PlaytimeRewardsClient.isClaimClickCoolingDown(i);
 
