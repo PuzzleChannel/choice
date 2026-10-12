@@ -29,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
+import java.time.ZonedDateTime;
 import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,6 +43,12 @@ public final class PlaytimeRewards implements ModInitializer {
             "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmutcoin"
     };
     private static final int[] DEFAULT_COUNTS = {12, 1, 1, 1};
+    private static final String[] DEFAULT_DESCRIPTIONS = {
+            "Быстрый перекус после первых минут на сервере.",
+            "Ведро воды пригодится в путешествиях и при строительстве.",
+            "Ценное лечение для опасных вылазок и сложных боёв.",
+            "Монета для экономики сервера. Требуется мод VMTrade."
+    };
     private static final Map<UUID, PlayerRecord> PLAYERS = new HashMap<>();
     private static final Reward[] REWARDS = new Reward[4];
     private static Path dataPath;
@@ -56,11 +63,11 @@ public final class PlaytimeRewards implements ModInitializer {
         String date = LocalDate.now(resetZone).toString();
     }
 
-    private record Reward(String itemId, int count) { }
+    private record Reward(String itemId, int count, String description) { }
 
     @Override
     public void onInitialize() {
-        for (int i = 0; i < REWARDS.length; i++) REWARDS[i] = new Reward(DEFAULT_ITEMS[i], DEFAULT_COUNTS[i]);
+        for (int i = 0; i < REWARDS.length; i++) REWARDS[i] = new Reward(DEFAULT_ITEMS[i], DEFAULT_COUNTS[i], DEFAULT_DESCRIPTIONS[i]);
 
         PayloadTypeRegistry.clientboundPlay().register(PlaytimePayloads.STATE_TYPE, PlaytimePayloads.State.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(PlaytimePayloads.CLAIM_TYPE, PlaytimePayloads.Claim.CODEC);
@@ -116,7 +123,7 @@ public final class PlaytimeRewards implements ModInitializer {
                                                         return 0;
                                                     }
                                                     Reward previousReward = REWARDS[index];
-                                                    REWARDS[index] = new Reward(BuiltInRegistries.ITEM.getKey(held.getItem()).toString(), count);
+                                                    REWARDS[index] = new Reward(BuiltInRegistries.ITEM.getKey(held.getItem()).toString(), count, REWARDS[index].description);
                                                     if (saveData()) {
                                                         broadcastState();
                                                         context.getSource().sendSuccess(() -> Component.literal(
@@ -126,6 +133,27 @@ public final class PlaytimeRewards implements ModInitializer {
                                                         context.getSource().sendFailure(Component.literal("Не удалось сохранить данные. Проверь файл конфигурации и latest.log."));
                                                         return 0;
                                                     }
+                                                    return 1;
+                                                }))))
+                        .then(Commands.literal("description")
+                                .then(Commands.argument("reward", IntegerArgumentType.integer(1, 4))
+                                        .then(Commands.argument("text", StringArgumentType.greedyString())
+                                                .executes(context -> {
+                                                    int index = IntegerArgumentType.getInteger(context, "reward") - 1;
+                                                    String description = StringArgumentType.getString(context, "text").replace(';', ',').trim();
+                                                    if (description.isBlank() || description.length() > 180) {
+                                                        context.getSource().sendFailure(Component.literal("Описание должно содержать от 1 до 180 символов."));
+                                                        return 0;
+                                                    }
+                                                    Reward previous = REWARDS[index];
+                                                    REWARDS[index] = new Reward(previous.itemId, previous.count, description);
+                                                    if (!saveData()) {
+                                                        REWARDS[index] = previous;
+                                                        context.getSource().sendFailure(Component.literal("Не удалось сохранить описание."));
+                                                        return 0;
+                                                    }
+                                                    broadcastState();
+                                                    context.getSource().sendSuccess(() -> Component.literal("Описание награды " + (index + 1) + " обновлено."), true);
                                                     return 1;
                                                 }))))
                         .then(Commands.literal("threshold")
@@ -218,7 +246,7 @@ public final class PlaytimeRewards implements ModInitializer {
 
     private static void sendState(ServerPlayer player, PlayerRecord record) {
         if (ServerPlayNetworking.canSend(player, PlaytimePayloads.STATE_TYPE)) {
-            ServerPlayNetworking.send(player, new PlaytimePayloads.State(record.seconds, record.claimedMask, encodeRewardConfig()));
+            ServerPlayNetworking.send(player, new PlaytimePayloads.State(record.seconds, record.claimedMask, PlaytimeSchedule.secondsUntilReset(java.time.Instant.now(), resetZone), encodeRewardConfig()));
         }
     }
 
@@ -226,7 +254,7 @@ public final class PlaytimeRewards implements ModInitializer {
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < REWARDS.length; i++) {
             if (i > 0) out.append(';');
-            out.append(THRESHOLDS[i]).append(',').append(REWARDS[i].itemId).append(',').append(REWARDS[i].count);
+            out.append(THRESHOLDS[i]).append(',').append(REWARDS[i].itemId).append(',').append(REWARDS[i].count).append(',').append(REWARDS[i].description.replace(";", ","));
         }
         return out.toString();
     }
@@ -326,9 +354,10 @@ public final class PlaytimeRewards implements ModInitializer {
                     JsonObject value = rewards.get(i).getAsJsonObject();
                     String item = value.has("item") ? value.get("item").getAsString() : DEFAULT_ITEMS[i];
                     int count = value.has("count") ? value.get("count").getAsInt() : DEFAULT_COUNTS[i];
+                    String description = value.has("description") ? value.get("description").getAsString() : DEFAULT_DESCRIPTIONS[i];
                     if (count < 1 || count > 64 || Identifier.tryParse(item) == null)
                         throw new IllegalArgumentException("invalid reward " + (i + 1));
-                    loadedRewards[i] = new Reward(item, count);
+                    loadedRewards[i] = new Reward(item, count, description);
                 }
             }
             if (root.has("players")) {
@@ -369,6 +398,7 @@ public final class PlaytimeRewards implements ModInitializer {
             JsonObject value = new JsonObject();
             value.addProperty("item", reward.itemId);
             value.addProperty("count", reward.count);
+            value.addProperty("description", reward.description);
             rewards.add(value);
         }
         root.add("rewards", rewards);
