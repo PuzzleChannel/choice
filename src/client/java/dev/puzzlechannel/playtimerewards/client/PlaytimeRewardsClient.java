@@ -22,6 +22,8 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
     private static volatile int claimedMask;
     private static volatile int secondsUntilReset = 86400;
     private static int clientTickCounter;
+    private static final int CLAIM_CLICK_COOLDOWN_TICKS = 20;
+    private static final int[] claimClickCooldownTicks = new int[4];
     private static volatile int[] thresholds = {1800, 3600, 7200, 14400};
     private static volatile String[] itemIds = {
             "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmcoin"
@@ -53,6 +55,9 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
                 }));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            for (int i = 0; i < claimClickCooldownTicks.length; i++) {
+                if (claimClickCooldownTicks[i] > 0) claimClickCooldownTicks[i]--;
+            }
             if (++clientTickCounter >= 20) {
                 clientTickCounter = 0;
                 if (secondsUntilReset > 0) secondsUntilReset--;
@@ -88,6 +93,24 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
         } catch (RuntimeException ignored) {
             // Keep the last valid server-synchronized configuration.
         }
+    }
+
+    public static boolean requestClaim(int index) {
+        if (index < 0 || index >= claimClickCooldownTicks.length
+                || claimClickCooldownTicks[index] > 0
+                || Minecraft.getInstance().player == null) {
+            return false;
+        }
+        // Small local debounce prevents accidental rapid double-clicks; the server has
+        // an independent rate limiter and remains authoritative.
+        claimClickCooldownTicks[index] = CLAIM_CLICK_COOLDOWN_TICKS;
+        ClientPlayNetworking.send(new PlaytimePayloads.Claim(index));
+        return true;
+    }
+
+    public static boolean isClaimClickCoolingDown(int index) {
+        return index >= 0 && index < claimClickCooldownTicks.length
+                && claimClickCooldownTicks[index] > 0;
     }
 
     public static int dailySeconds() { return dailySeconds; }
