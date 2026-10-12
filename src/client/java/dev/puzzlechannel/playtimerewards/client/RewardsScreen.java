@@ -21,7 +21,7 @@ public final class RewardsScreen extends Screen {
     private static final int ACCENT = 0xFFE58A3A;
     private static final int TEXT = 0xFFF4E8D9;
     private static final int MUTED = 0xFFB9A18D;
-    private static final String VMCOIN_ID = "vmtrade:vmutcoin";
+    private static final String VMCOIN_ID = "vmtrade:vmcoin";
     private static final String VMCOIN_DESCRIPTION = "Используется для обмена на Маркете";
     private final Button[] claimButtons = new Button[4];
 
