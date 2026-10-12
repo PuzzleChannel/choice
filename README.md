@@ -5,13 +5,13 @@ Fabric mod for Minecraft 26.2. Tracks active server playtime and offers four ser
 ## Requirements
 - Java 25
 - Minecraft 26.2 / Fabric Loader 0.19.5 / Fabric API 0.161.0+26.2
-- VMTrade is needed when a reward uses `vmtrade:vmutcoin`
+- VMTrade is needed when a reward uses `vmtrade:vmcoin`
 
 ## Default rewards
 1. 30 minutes — 12 bread
 2. 1 hour — water bucket
 3. 2 hours — golden apple
-4. 4 hours — `vmtrade:vmutcoin`
+4. 4 hours — `vmtrade:vmcoin`
 
 ## Build
 On Windows, run `gradlew.bat build` from the project root. On Linux/macOS, run `./gradlew build`. Java 25 is required. The first build downloads Gradle and dependencies. The mod jar and sources jar are written to `build/libs/`. GitHub Actions builds the project and uploads the jar as an artifact when the build succeeds.
@@ -26,7 +26,7 @@ All commands below require operator permission.
 - `/playtimerewards save` — save current data.
 - `/playtimerewards reload` — reload the saved data.
 
-Press **P** to open the reward screen. When a reward becomes available, the player receives a chat notification with a clickable **[ОТКРЫТЬ НАГРАДЫ]** link that opens the same screen. Each card displays the actual item icon and quantity (including VMTrade coin), required playtime, progress, and claim status. Only `vmtrade:vmutcoin` has a description: “Используется для обмена на Маркете”. The top of the screen shows a countdown to the next daily reset.
+Press **P** to open the reward screen. When a reward becomes available, the player receives a chat notification with a clickable **[ОТКРЫТЬ НАГРАДЫ]** link that opens the same screen. Each card displays the actual item icon and quantity (including VMTrade coin), required playtime, progress, and claim status. Only `vmtrade:vmcoin` has a description: “Используется для обмена на Маркете”. The top of the screen shows a countdown to the next daily reset. Time is shown compactly without leading zeroes, for example `1ч 25м 15с`.
 
 ## Automated tests
 
