@@ -149,27 +149,6 @@ public final class PlaytimeRewards implements ModInitializer {
                                                     }
                                                     return 1;
                                                 }))))
-                        .then(Commands.literal("description")
-                                .then(Commands.argument("reward", IntegerArgumentType.integer(1, 4))
-                                        .then(Commands.argument("text", StringArgumentType.greedyString())
-                                                .executes(context -> {
-                                                    int index = IntegerArgumentType.getInteger(context, "reward") - 1;
-                                                    String description = StringArgumentType.getString(context, "text").replace(';', ',').trim();
-                                                    if (description.isBlank() || description.length() > 180) {
-                                                        context.getSource().sendFailure(Component.literal("Описание должно содержать от 1 до 180 символов."));
-                                                        return 0;
-                                                    }
-                                                    Reward previous = REWARDS[index];
-                                                    REWARDS[index] = new Reward(previous.itemId, previous.count, description);
-                                                    if (!saveData()) {
-                                                        REWARDS[index] = previous;
-                                                        context.getSource().sendFailure(Component.literal("Не удалось сохранить описание."));
-                                                        return 0;
-                                                    }
-                                                    broadcastState();
-                                                    context.getSource().sendSuccess(() -> Component.literal("Описание награды " + (index + 1) + " обновлено."), true);
-                                                    return 1;
-                                                }))))
                         .then(Commands.literal("threshold")
                                 .then(Commands.argument("reward", IntegerArgumentType.integer(1, 4))
                                         .then(Commands.argument("seconds", IntegerArgumentType.integer(60, 86400))
