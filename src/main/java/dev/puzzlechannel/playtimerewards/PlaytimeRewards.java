@@ -28,9 +28,13 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.time.ZoneId;
@@ -521,15 +525,37 @@ public final class PlaytimeRewards implements ModInitializer {
         try {
             Files.createDirectories(dataPath.getParent());
             Path temporary = dataPath.resolveSibling(dataPath.getFileName() + ".tmp");
-            Files.writeString(temporary, GSON.toJson(root));
+            byte[] jsonBytes = GSON.toJson(root).getBytes(StandardCharsets.UTF_8);
+
+            // Flush the complete new state before replacing the last known-good file.
+            // This is especially important when a claimed bit must be durable before
+            // the item is inserted into the player's inventory.
+            try (FileChannel channel = FileChannel.open(temporary,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                ByteBuffer buffer = ByteBuffer.wrap(jsonBytes);
+                while (buffer.hasRemaining()) channel.write(buffer);
+                channel.force(true);
+            }
+
             if (Files.exists(dataPath)) {
                 Path backup = dataPath.resolveSibling(dataPath.getFileName() + ".bak");
                 Files.copy(dataPath, backup, StandardCopyOption.REPLACE_EXISTING);
+                try (FileChannel backupChannel = FileChannel.open(backup, StandardOpenOption.WRITE)) {
+                    backupChannel.force(true);
+                }
             }
             try {
                 Files.move(temporary, dataPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException ignored) {
+            } catch (IOException atomicMoveUnavailable) {
                 Files.move(temporary, dataPath, StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            // Directory fsync is supported on common Unix filesystems but not on every
+            // platform (notably some Windows filesystems), so treat it as best-effort.
+            try (FileChannel directoryChannel = FileChannel.open(dataPath.getParent(), StandardOpenOption.READ)) {
+                directoryChannel.force(true);
+            } catch (IOException | UnsupportedOperationException ignored) {
+                // The file contents have still been forced before the rename.
             }
             return true;
         } catch (IOException exception) {
