@@ -17,6 +17,9 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
@@ -43,11 +46,12 @@ public final class PlaytimeRewards implements ModInitializer {
             "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmutcoin"
     };
     private static final int[] DEFAULT_COUNTS = {12, 1, 1, 1};
+    private static final String VMCOIN_DESCRIPTION = "Используется для обмена на Маркете";
     private static final String[] DEFAULT_DESCRIPTIONS = {
-            "Быстрый перекус после первых минут на сервере.",
-            "Ведро воды пригодится в путешествиях и при строительстве.",
-            "Ценное лечение для опасных вылазок и сложных боёв.",
-            "Монета для экономики сервера. Требуется мод VMTrade."
+            "",
+            "",
+            "",
+            VMCOIN_DESCRIPTION
     };
     private static final Map<UUID, PlayerRecord> PLAYERS = new HashMap<>();
     private static final Reward[] REWARDS = new Reward[4];
@@ -60,6 +64,7 @@ public final class PlaytimeRewards implements ModInitializer {
     private static final class PlayerRecord {
         int seconds;
         int claimedMask;
+        int notifiedMask;
         String date = LocalDate.now(resetZone).toString();
     }
 
@@ -76,14 +81,21 @@ public final class PlaytimeRewards implements ModInitializer {
             server = s;
             dataPath = FabricLoader.getInstance().getConfigDir().resolve("daily-playtime-rewards.json");
             loadData();
-            for (ServerPlayer player : s.getPlayerList().getPlayers()) sendState(player, getRecord(player));
+            for (ServerPlayer player : s.getPlayerList().getPlayers()) {
+                PlayerRecord record = getRecord(player);
+                notifyReadyRewards(player, record);
+                sendState(player, record);
+            }
         });
         ServerLifecycleEvents.SERVER_STOPPING.register(s -> {
             saveData();
             server = null;
         });
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, s) -> s.execute(() ->
-                sendState(handler.player, getRecord(handler.player))));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, s) -> s.execute(() -> {
+            PlayerRecord record = getRecord(handler.player);
+            notifyReadyRewards(handler.player, record);
+            sendState(handler.player, record);
+        }));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, s) -> saveData());
 
         ServerTickEvents.END_SERVER_TICK.register(s -> {
@@ -93,6 +105,7 @@ public final class PlaytimeRewards implements ModInitializer {
                 for (ServerPlayer player : s.getPlayerList().getPlayers()) {
                     PlayerRecord record = getRecord(player);
                     record.seconds = Math.min(record.seconds + 1, 86400);
+                    notifyReadyRewards(player, record);
                     sendState(player, record);
                 }
             }
@@ -123,7 +136,8 @@ public final class PlaytimeRewards implements ModInitializer {
                                                         return 0;
                                                     }
                                                     Reward previousReward = REWARDS[index];
-                                                    REWARDS[index] = new Reward(BuiltInRegistries.ITEM.getKey(held.getItem()).toString(), count, REWARDS[index].description);
+                                                    String itemId = BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+                                                    REWARDS[index] = new Reward(itemId, count, descriptionFor(itemId));
                                                     if (saveData()) {
                                                         broadcastState();
                                                         context.getSource().sendSuccess(() -> Component.literal(
@@ -239,9 +253,45 @@ public final class PlaytimeRewards implements ModInitializer {
             record.date = today;
             record.seconds = 0;
             record.claimedMask = 0;
+            record.notifiedMask = 0;
             saveData();
         }
         return record;
+    }
+
+    private static String descriptionFor(String itemId) {
+        return "vmtrade:vmutcoin".equals(itemId) ? VMCOIN_DESCRIPTION : "";
+    }
+
+    private static void notifyReadyRewards(ServerPlayer player, PlayerRecord record) {
+        int newlyNotifiedMask = 0;
+        for (int i = 0; i < REWARDS.length; i++) {
+            int bit = 1 << i;
+            if (record.seconds >= THRESHOLDS[i]
+                    && (record.claimedMask & bit) == 0
+                    && (record.notifiedMask & bit) == 0) {
+                newlyNotifiedMask |= bit;
+            }
+        }
+        if (newlyNotifiedMask == 0) return;
+
+        // Persist the notification mask so a reconnect does not repeat the same message.
+        record.notifiedMask |= newlyNotifiedMask;
+        saveData();
+
+        for (int i = 0; i < REWARDS.length; i++) {
+            if ((newlyNotifiedMask & (1 << i)) == 0) continue;
+            Component openButton = Component.literal("[ОТКРЫТЬ НАГРАДЫ]")
+                    .withStyle(style -> style
+                            .withColor(ChatFormatting.GOLD)
+                            .withUnderlined(true)
+                            .withClickEvent(new ClickEvent.RunCommand("/dailyrewards"))
+                            .withHoverEvent(new HoverEvent.ShowText(
+                                    Component.literal("Открыть меню ежедневных наград"))));
+            player.sendSystemMessage(Component.literal("Награда №" + (i + 1) + " доступна! ")
+                    .withStyle(ChatFormatting.GREEN)
+                    .append(openButton));
+        }
     }
 
     private static void sendState(ServerPlayer player, PlayerRecord record) {
@@ -354,7 +404,7 @@ public final class PlaytimeRewards implements ModInitializer {
                     JsonObject value = rewards.get(i).getAsJsonObject();
                     String item = value.has("item") ? value.get("item").getAsString() : DEFAULT_ITEMS[i];
                     int count = value.has("count") ? value.get("count").getAsInt() : DEFAULT_COUNTS[i];
-                    String description = value.has("description") ? value.get("description").getAsString() : DEFAULT_DESCRIPTIONS[i];
+                    String description = descriptionFor(item);
                     if (count < 1 || count > 64 || Identifier.tryParse(item) == null)
                         throw new IllegalArgumentException("invalid reward " + (i + 1));
                     loadedRewards[i] = new Reward(item, count, description);
@@ -367,6 +417,7 @@ public final class PlaytimeRewards implements ModInitializer {
                     PlayerRecord record = new PlayerRecord();
                     record.seconds = Math.max(0, Math.min(86400, value.get("seconds").getAsInt()));
                     record.claimedMask = value.get("claimed").getAsInt() & 0b1111;
+                    record.notifiedMask = value.has("notified") ? value.get("notified").getAsInt() & 0b1111 : 0;
                     record.date = value.get("date").getAsString();
                     loadedPlayers.put(uuid, record);
                 }
@@ -408,6 +459,7 @@ public final class PlaytimeRewards implements ModInitializer {
             value.addProperty("uuid", uuid.toString());
             value.addProperty("seconds", record.seconds);
             value.addProperty("claimed", record.claimedMask);
+            value.addProperty("notified", record.notifiedMask);
             value.addProperty("date", record.date);
             players.add(value);
         });
