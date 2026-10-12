@@ -44,8 +44,8 @@ public final class RewardsScreen extends Screen {
     private int gap() { return width < 440 ? 5 : 8; }
     private int columns() {
         int available = Math.max(1, width - outerPadding() * 2);
-        if (available >= 4 * 126 + gap() * 3) return 4;
-        if (available >= 2 * 126 + gap()) return 2;
+        if (available >= 4 * 115 + gap() * 3) return 4;
+        if (available >= 2 * 105 + gap()) return 2;
         return 1;
     }
     private int rows() { return 4 / columns(); }
