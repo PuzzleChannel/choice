@@ -17,11 +17,19 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
 
     private static volatile int dailySeconds;
     private static volatile int claimedMask;
+    private static volatile int secondsUntilReset = 86400;
+    private static volatile int clientTickCounter;
     private static volatile int[] thresholds = {1800, 3600, 7200, 14400};
     private static volatile String[] itemIds = {
             "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmutcoin"
     };
     private static volatile int[] counts = {12, 1, 1, 1};
+    private static volatile String[] descriptions = {
+            "Быстрый перекус после первых минут на сервере.",
+            "Ведро воды пригодится в путешествиях и при строительстве.",
+            "Ценное лечение для опасных вылазок и сложных боёв.",
+            "Монета для экономики сервера. Требуется мод VMTrade."
+    };
 
     @Override
     public void onInitializeClient() {
@@ -45,26 +53,26 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
             if (entries.length != 4) return;
             int[] newThresholds = new int[4];
             String[] newItemIds = new String[4];
-            int[] newCounts = new int[4];
+            int[] newCounts = new int[4];\n            String[] newDescriptions = new String[4];
             for (int i = 0; i < 4; i++) {
                 String[] fields = entries[i].split(",", 3);
                 if (fields.length != 3) return;
                 newThresholds[i] = Integer.parseInt(fields[0]);
                 newItemIds[i] = fields[1];
-                newCounts[i] = Integer.parseInt(fields[2]);
+                newCounts[i] = Integer.parseInt(fields[2]);\n                newDescriptions[i] = fields[3];
                 if (newThresholds[i] < 1 || newCounts[i] < 1 || newCounts[i] > 64 || Identifier.tryParse(newItemIds[i]) == null) return;
             }
             thresholds = newThresholds;
             itemIds = newItemIds;
-            counts = newCounts;
+            counts = newCounts;\n            descriptions = newDescriptions;
         } catch (RuntimeException ignored) {
             // Keep the last valid server-synchronized configuration.
         }
     }
 
     public static int dailySeconds() { return dailySeconds; }
-    public static int claimedMask() { return claimedMask; }
+    public static int claimedMask() { return claimedMask; }\n    public static int secondsUntilReset() { return secondsUntilReset; }
     public static int threshold(int index) { return thresholds[index]; }
     public static int count(int index) { return counts[index]; }
-    public static String itemId(int index) { return itemIds[index]; }
+    public static String itemId(int index) { return itemIds[index]; }\n    public static String description(int index) { return descriptions[index]; }
 }
