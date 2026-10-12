@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,4 +40,20 @@ class PlaytimeScheduleTest {
         assertEquals("0с", PlaytimeSchedule.formatDuration(0));
         assertEquals("0с", PlaytimeSchedule.formatDuration(-12));
     }
+    @Test
+    void claimPacketLimiterRejectsBurstsAndSeparatesPlayers() {
+        ClaimRequestLimiter limiter = new ClaimRequestLimiter(500);
+        UUID firstPlayer = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID secondPlayer = UUID.fromString("00000000-0000-0000-0000-000000000002");
+
+        assertTrue(limiter.tryAcquire(firstPlayer, 1_000));
+        assertFalse(limiter.tryAcquire(firstPlayer, 1_100));
+        assertFalse(limiter.tryAcquire(firstPlayer, 1_499));
+        assertTrue(limiter.tryAcquire(firstPlayer, 1_500));
+
+        assertTrue(limiter.tryAcquire(secondPlayer, 1_100));
+        limiter.clear(firstPlayer);
+        assertTrue(limiter.tryAcquire(firstPlayer, 1_101));
+    }
+
 }
