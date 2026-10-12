@@ -35,6 +35,11 @@ public final class PlaytimeSchedule {
         long hours = safe / 3600;
         long minutes = (safe % 3600) / 60;
         long seconds = safe % 60;
-        return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+
+        StringBuilder result = new StringBuilder();
+        if (hours > 0) result.append(hours).append("ч ");
+        if (minutes > 0) result.append(minutes).append("м ");
+        if (seconds > 0 || result.isEmpty()) result.append(seconds).append("с");
+        return result.toString().trim();
     }
 }
