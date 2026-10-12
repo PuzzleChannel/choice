@@ -174,6 +174,10 @@ public final class PlaytimeRewards implements ModInitializer {
                                                         context.getSource().sendFailure(Component.literal("Количество превышает максимальный размер стака предмета: " + held.getMaxStackSize() + "."));
                                                         return 0;
                                                     }
+                                                    if (index == 3 && count != 1) {
+                                                        context.getSource().sendFailure(Component.literal("Четвёртая награда всегда выдаётся в количестве 1 vmtrade:vmcoin."));
+                                                        return 0;
+                                                    }
                                                     Reward previousReward = REWARDS[index];
                                                     int dayIndex = Math.max(0, activeDay);
                                                     String itemId = BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
