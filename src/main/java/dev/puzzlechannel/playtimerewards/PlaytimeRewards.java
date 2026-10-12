@@ -43,7 +43,7 @@ public final class PlaytimeRewards implements ModInitializer {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final int[] THRESHOLDS = {1800, 3600, 7200, 14400};
     private static final String[] DEFAULT_ITEMS = {
-            "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmutcoin"
+            "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmcoin"
     };
     private static final int[] DEFAULT_COUNTS = {12, 1, 1, 1};
     private static final String VMCOIN_DESCRIPTION = "Используется для обмена на Маркете";
@@ -158,7 +158,7 @@ public final class PlaytimeRewards implements ModInitializer {
                                                     int previous = index == 0 ? 0 : THRESHOLDS[index - 1];
                                                     int next = index == 3 ? 86401 : THRESHOLDS[index + 1];
                                                     if (seconds <= previous || seconds >= next) {
-                                                        context.getSource().sendFailure(Component.literal("Порог должен быть строго между соседними порогами (" + previous + " и " + (next == 86401 ? 86400 : next) + " секунд)."));
+                                                        context.getSource().sendFailure(Component.literal("Порог должен быть строго между соседними порогами (" + PlaytimeSchedule.formatDuration(previous) + " и " + PlaytimeSchedule.formatDuration(next == 86401 ? 86400 : next) + ")."));
                                                         return 0;
                                                     }
                                                     int old = THRESHOLDS[index];
@@ -169,7 +169,7 @@ public final class PlaytimeRewards implements ModInitializer {
                                                         return 0;
                                                     }
                                                     broadcastState();
-                                                    context.getSource().sendSuccess(() -> Component.literal("Порог награды " + (index + 1) + ": " + seconds + " сек."), true);
+                                                    context.getSource().sendSuccess(() -> Component.literal("Порог награды " + (index + 1) + ": " + PlaytimeSchedule.formatDuration(seconds)), true);
                                                     return 1;
                                                 }))))
                         .then(Commands.literal("timezone")
@@ -194,13 +194,16 @@ public final class PlaytimeRewards implements ModInitializer {
                         .then(Commands.literal("status")
                                 .executes(context -> {
                                     context.getSource().sendSuccess(() -> Component.literal("Сброс: " + resetZone + "; пороги: " +
-                                            THRESHOLDS[0] + ", " + THRESHOLDS[1] + ", " + THRESHOLDS[2] + ", " + THRESHOLDS[3] + " сек."), false);
+                                            PlaytimeSchedule.formatDuration(THRESHOLDS[0]) + ", " +
+                                            PlaytimeSchedule.formatDuration(THRESHOLDS[1]) + ", " +
+                                            PlaytimeSchedule.formatDuration(THRESHOLDS[2]) + ", " +
+                                            PlaytimeSchedule.formatDuration(THRESHOLDS[3])), false);
                                     if (server != null) {
                                         for (ServerPlayer online : server.getPlayerList().getPlayers()) {
                                             PlayerRecord record = getRecord(online);
                                             int claimed = Integer.bitCount(record.claimedMask & 0b1111);
                                             context.getSource().sendSuccess(() -> Component.literal(online.getName().getString() +
-                                                    " — " + record.seconds + " сек., получено наград: " + claimed + "/4"), false);
+                                                    " — " + PlaytimeSchedule.formatDuration(record.seconds) + ", получено наград: " + claimed + "/4"), false);
                                         }
                                     }
                                     return 1;
@@ -239,7 +242,7 @@ public final class PlaytimeRewards implements ModInitializer {
     }
 
     private static String descriptionFor(String itemId) {
-        return "vmtrade:vmutcoin".equals(itemId) ? VMCOIN_DESCRIPTION : "";
+        return "vmtrade:vmcoin".equals(itemId) ? VMCOIN_DESCRIPTION : "";
     }
 
     private static void notifyReadyRewards(ServerPlayer player, PlayerRecord record) {
@@ -382,6 +385,8 @@ public final class PlaytimeRewards implements ModInitializer {
                 for (int i = 0; i < Math.min(rewards.size(), loadedRewards.length); i++) {
                     JsonObject value = rewards.get(i).getAsJsonObject();
                     String item = value.has("item") ? value.get("item").getAsString() : DEFAULT_ITEMS[i];
+                    // Migrate saved configs from the previous VMTrade item id to the actual market coin.
+                    if ("vmtrade:vmutcoin".equals(item)) item = "vmtrade:vmcoin";
                     int count = value.has("count") ? value.get("count").getAsInt() : DEFAULT_COUNTS[i];
                     String description = descriptionFor(item);
                     if (count < 1 || count > 64 || Identifier.tryParse(item) == null)
