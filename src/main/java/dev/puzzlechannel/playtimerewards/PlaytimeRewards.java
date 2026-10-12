@@ -53,12 +53,12 @@ public final class PlaytimeRewards implements ModInitializer {
     // Seven deterministic schedules, Monday first. Slot four is always the VMTrade coin.
     private static final String[][] WEEKLY_ITEMS = {
         {"minecraft:bread","minecraft:cooked_beef","minecraft:golden_apple","vmtrade:vmcoin"},
-        {"minecraft:baked_potato","minecraft:torch","minecraft:ender_pearl","vmtrade:vmcoin"},
-        {"minecraft:cooked_chicken","minecraft:arrow","minecraft:shield","vmtrade:vmcoin"},
-        {"minecraft:cooked_porkchop","minecraft:golden_carrot","minecraft:crossbow","vmtrade:vmcoin"},
+        {"minecraft:baked_potato","minecraft:cooked_cod","minecraft:ender_pearl","vmtrade:vmcoin"},
+        {"minecraft:cooked_chicken","minecraft:golden_carrot","minecraft:golden_apple","vmtrade:vmcoin"},
+        {"minecraft:cooked_porkchop","minecraft:golden_carrot","minecraft:enchanted_golden_apple","vmtrade:vmcoin"},
         {"minecraft:bread","minecraft:cooked_beef","minecraft:experience_bottle","vmtrade:vmcoin"},
-        {"minecraft:baked_potato","minecraft:torch","minecraft:golden_apple","vmtrade:vmcoin"},
-        {"minecraft:cooked_salmon","minecraft:arrow","minecraft:ender_pearl","vmtrade:vmcoin"}
+        {"minecraft:baked_potato","minecraft:cooked_cod","minecraft:golden_apple","vmtrade:vmcoin"},
+        {"minecraft:cooked_salmon","minecraft:golden_carrot","minecraft:ender_pearl","vmtrade:vmcoin"}
     };
     private static final int[][] WEEKLY_COUNTS = {
         {8,12,1,1},{16,24,2,1},{10,24,1,1},{12,6,1,1},{16,16,8,1},{20,32,2,1},{12,32,4,1}
