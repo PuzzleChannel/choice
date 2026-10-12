@@ -37,4 +37,4 @@ Data is stored in `config/daily-playtime-rewards.json`. The file contains the ti
 
 Playtime is counted on the server while a player is online. Daily progress and claims reset using the configured time zone. The server validates every claim and checks inventory space; a claim is persisted before inventory delivery to prevent duplicate claims. If the data JSON cannot be parsed, saving is blocked rather than overwriting it with empty data. Fix the JSON or restore the `.bak` file, then use `/playtimerewards reload`.
 
-The server saves periodically, on disconnect, and on shutdown. Do not remove the data JSON while the server is running.
+The server saves periodically, on disconnect, and on shutdown. Claim packets are rate-limited on the network thread, reward buttons debounce rapid clicks, and the server rechecks claim eligibility, item availability, stack size, and inventory capacity for every request. If an inventory insertion unexpectedly fails partway through, the mod restores the original main inventory before allowing a retry. Do not remove the data JSON while the server is running.
