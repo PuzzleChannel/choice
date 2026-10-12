@@ -18,7 +18,7 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
     private static volatile int dailySeconds;
     private static volatile int claimedMask;
     private static volatile int secondsUntilReset = 86400;
-    private static volatile int clientTickCounter;
+    private static int clientTickCounter;
     private static volatile int[] thresholds = {1800, 3600, 7200, 14400};
     private static volatile String[] itemIds = {
             "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmutcoin"
@@ -37,10 +37,15 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
                 context.client().execute(() -> {
                     dailySeconds = Math.max(0, Math.min(86400, payload.seconds()));
                     claimedMask = payload.claimedMask() & 0b1111;
+                    secondsUntilReset = Math.max(0, Math.min(86400, payload.secondsUntilReset()));
                     applyRewardConfig(payload.rewardConfig());
                 }));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (++clientTickCounter >= 20) {
+                clientTickCounter = 0;
+                if (secondsUntilReset > 0) secondsUntilReset--;
+            }
             while (OPEN_MENU.consumeClick()) {
                 if (client.player != null) client.gui.setScreen(new RewardsScreen());
             }
@@ -53,26 +58,32 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
             if (entries.length != 4) return;
             int[] newThresholds = new int[4];
             String[] newItemIds = new String[4];
-            int[] newCounts = new int[4];\n            String[] newDescriptions = new String[4];
+            int[] newCounts = new int[4];
+            String[] newDescriptions = new String[4];
             for (int i = 0; i < 4; i++) {
-                String[] fields = entries[i].split(",", 3);
-                if (fields.length != 3) return;
+                String[] fields = entries[i].split(",", 4);
+                if (fields.length != 4) return;
                 newThresholds[i] = Integer.parseInt(fields[0]);
                 newItemIds[i] = fields[1];
-                newCounts[i] = Integer.parseInt(fields[2]);\n                newDescriptions[i] = fields[3];
-                if (newThresholds[i] < 1 || newCounts[i] < 1 || newCounts[i] > 64 || Identifier.tryParse(newItemIds[i]) == null) return;
+                newCounts[i] = Integer.parseInt(fields[2]);
+                newDescriptions[i] = fields[3];
+                if (newThresholds[i] < 1 || newCounts[i] < 1 || newCounts[i] > 64 ||
+                        Identifier.tryParse(newItemIds[i]) == null || newDescriptions[i].isBlank()) return;
             }
             thresholds = newThresholds;
             itemIds = newItemIds;
-            counts = newCounts;\n            descriptions = newDescriptions;
+            counts = newCounts;
+            descriptions = newDescriptions;
         } catch (RuntimeException ignored) {
             // Keep the last valid server-synchronized configuration.
         }
     }
 
     public static int dailySeconds() { return dailySeconds; }
-    public static int claimedMask() { return claimedMask; }\n    public static int secondsUntilReset() { return secondsUntilReset; }
+    public static int claimedMask() { return claimedMask; }
+    public static int secondsUntilReset() { return secondsUntilReset; }
     public static int threshold(int index) { return thresholds[index]; }
     public static int count(int index) { return counts[index]; }
-    public static String itemId(int index) { return itemIds[index]; }\n    public static String description(int index) { return descriptions[index]; }
+    public static String itemId(int index) { return itemIds[index]; }
+    public static String description(int index) { return descriptions[index]; }
 }
