@@ -36,7 +36,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
-import java.time.ZonedDateTime;
 import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.Map;
@@ -50,7 +49,20 @@ public final class PlaytimeRewards implements ModInitializer {
     private static final String[] DEFAULT_ITEMS = {
             "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmcoin"
     };
-    private static final int[] DEFAULT_COUNTS = {12, 1, 1, 1};
+    private static final int[] DEFAULT_COUNTS = {8, 12, 1, 1};
+    // Seven deterministic schedules, Monday first. Slot four is always the VMTrade coin.
+    private static final String[][] WEEKLY_ITEMS = {
+        {"minecraft:bread","minecraft:cooked_beef","minecraft:golden_apple","vmtrade:vmcoin"},
+        {"minecraft:baked_potato","minecraft:torch","minecraft:ender_pearl","vmtrade:vmcoin"},
+        {"minecraft:cooked_chicken","minecraft:arrow","minecraft:shield","vmtrade:vmcoin"},
+        {"minecraft:cooked_porkchop","minecraft:golden_carrot","minecraft:crossbow","vmtrade:vmcoin"},
+        {"minecraft:bread","minecraft:cooked_beef","minecraft:experience_bottle","vmtrade:vmcoin"},
+        {"minecraft:baked_potato","minecraft:torch","minecraft:golden_apple","vmtrade:vmcoin"},
+        {"minecraft:cooked_salmon","minecraft:arrow","minecraft:ender_pearl","vmtrade:vmcoin"}
+    };
+    private static final int[][] WEEKLY_COUNTS = {
+        {8,12,1,1},{16,24,2,1},{10,24,1,1},{12,6,1,1},{16,16,8,1},{20,32,2,1},{12,32,4,1}
+    };
     private static final String VMCOIN_DESCRIPTION = "Используется для обмена на Маркете";
     private static final String[] DEFAULT_DESCRIPTIONS = {
             "",
@@ -60,6 +72,8 @@ public final class PlaytimeRewards implements ModInitializer {
     };
     private static final Map<UUID, PlayerRecord> PLAYERS = new HashMap<>();
     private static final Reward[] REWARDS = new Reward[4];
+    private static final Reward[][] WEEKLY_REWARDS = new Reward[7][4];
+    private static int activeDay = -1;
     private static Path dataPath;
     private static MinecraftServer server;
     private static ZoneId resetZone = ZoneId.systemDefault();
@@ -79,7 +93,11 @@ public final class PlaytimeRewards implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        for (int i = 0; i < REWARDS.length; i++) REWARDS[i] = new Reward(DEFAULT_ITEMS[i], DEFAULT_COUNTS[i], DEFAULT_DESCRIPTIONS[i]);
+        for (int day=0; day<7; day++) for (int i=0; i<4; i++) {
+            String item=WEEKLY_ITEMS[day][i];
+            WEEKLY_REWARDS[day][i]=new Reward(item,WEEKLY_COUNTS[day][i],descriptionFor(item));
+        }
+        refreshActiveRewards(LocalDate.now(resetZone));
 
         PayloadTypeRegistry.clientboundPlay().register(PlaytimePayloads.STATE_TYPE, PlaytimePayloads.State.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(PlaytimePayloads.CLAIM_TYPE, PlaytimePayloads.Claim.CODEC);
@@ -157,14 +175,21 @@ public final class PlaytimeRewards implements ModInitializer {
                                                         return 0;
                                                     }
                                                     Reward previousReward = REWARDS[index];
+                                                    int dayIndex = Math.max(0, activeDay);
                                                     String itemId = BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+                                                    if (index == 3 && !"vmtrade:vmcoin".equals(itemId)) {
+                                                        context.getSource().sendFailure(Component.literal("Четвёртая награда всегда должна быть vmtrade:vmcoin."));
+                                                        return 0;
+                                                    }
                                                     REWARDS[index] = new Reward(itemId, count, descriptionFor(itemId));
+                                                    WEEKLY_REWARDS[dayIndex][index] = REWARDS[index];
                                                     if (saveData()) {
                                                         broadcastState();
                                                         context.getSource().sendSuccess(() -> Component.literal(
                                                                 "Награда " + (index + 1) + " изменена: " + REWARDS[index].itemId + " x" + count), true);
                                                     } else {
                                                         REWARDS[index] = previousReward;
+                                                        WEEKLY_REWARDS[dayIndex][index] = previousReward;
                                                         context.getSource().sendFailure(Component.literal("Не удалось сохранить данные. Проверь файл конфигурации и latest.log."));
                                                         return 0;
                                                     }
@@ -249,9 +274,20 @@ public final class PlaytimeRewards implements ModInitializer {
                                 }))));
     }
 
+    private static void refreshActiveRewards(LocalDate date) {
+        int day=date.getDayOfWeek().getValue()-1;
+        if (day==activeDay) return;
+        activeDay=day;
+        System.arraycopy(WEEKLY_REWARDS[day],0,REWARDS,0,4);
+        REWARDS[3]=new Reward("vmtrade:vmcoin",1,VMCOIN_DESCRIPTION);
+        WEEKLY_REWARDS[day][3]=REWARDS[3];
+    }
+
     private static PlayerRecord getRecord(ServerPlayer player) {
+        LocalDate localDate=LocalDate.now(resetZone);
+        refreshActiveRewards(localDate);
         PlayerRecord record = PLAYERS.computeIfAbsent(player.getUUID(), ignored -> new PlayerRecord());
-        String today = LocalDate.now(resetZone).toString();
+        String today = localDate.toString();
         if (!today.equals(record.date)) {
             record.date = today;
             record.seconds = 0;
@@ -432,6 +468,11 @@ public final class PlaytimeRewards implements ModInitializer {
             if (root == null) throw new IllegalStateException("empty JSON");
             Map<UUID, PlayerRecord> loadedPlayers = new HashMap<>();
             Reward[] loadedRewards = REWARDS.clone();
+            Reward[][] loadedWeek = new Reward[7][4];
+            for(int d=0;d<7;d++) for(int i=0;i<4;i++) {
+                String item=WEEKLY_ITEMS[d][i];
+                loadedWeek[d][i]=new Reward(item,WEEKLY_COUNTS[d][i],descriptionFor(item));
+            }
             int[] loadedThresholds = THRESHOLDS.clone();
             ZoneId loadedZone = resetZone;
 
@@ -446,28 +487,40 @@ public final class PlaytimeRewards implements ModInitializer {
                         throw new IllegalArgumentException("invalid threshold order");
                 }
             }
-            if (root.has("rewards")) {
-                JsonArray rewards = root.getAsJsonArray("rewards");
-                for (int i = 0; i < Math.min(rewards.size(), loadedRewards.length); i++) {
-                    JsonObject value = rewards.get(i).getAsJsonObject();
-                    String item = value.has("item") ? value.get("item").getAsString() : DEFAULT_ITEMS[i];
-                    // Migrate saved configs from the previous VMTrade item id to the actual market coin.
-                    if ("vmtrade:vmutcoin".equals(item)) item = "vmtrade:vmcoin";
-                    int count = value.has("count") ? value.get("count").getAsInt() : DEFAULT_COUNTS[i];
-                    String description = descriptionFor(item);
-                    Identifier parsedItem = Identifier.tryParse(item);
-                    if (count < 1 || count > 64 || parsedItem == null)
-                        throw new IllegalArgumentException("invalid reward " + (i + 1));
-                    Item registeredItem = BuiltInRegistries.ITEM.getValue(parsedItem);
-                    // VMTrade is optional; keep a valid identifier if its item is currently unavailable.
-                    // If the item is registered, however, reject impossible oversized stacks at load time.
-                    if (registeredItem != null && registeredItem != net.minecraft.world.item.Items.AIR
-                            && count > new ItemStack(registeredItem).getMaxStackSize()) {
-                        throw new IllegalArgumentException("reward " + (i + 1) + " count exceeds the item's maximum stack size");
+            if (root.has("weeklyRewards")) {
+                JsonArray week=root.getAsJsonArray("weeklyRewards");
+                if(week.size()!=7) throw new IllegalArgumentException("weeklyRewards must contain seven days");
+                for(int d=0;d<7;d++) {
+                    JsonArray day=week.get(d).getAsJsonArray();
+                    if(day.size()!=4) throw new IllegalArgumentException("each weekday needs four rewards");
+                    for(int i=0;i<4;i++) {
+                        JsonObject v=day.get(i).getAsJsonObject();
+                        String item=v.has("item")?v.get("item").getAsString():WEEKLY_ITEMS[d][i];
+                        if("vmtrade:vmutcoin".equals(item)) item="vmtrade:vmcoin";
+                        if(i==3) item="vmtrade:vmcoin";
+                        int count=i==3?1:(v.has("count")?v.get("count").getAsInt():WEEKLY_COUNTS[d][i]);
+                        String desc=v.has("description")?v.get("description").getAsString():descriptionFor(item);
+                        Identifier id=Identifier.tryParse(item);
+                        if(id==null||count<1||count>64) throw new IllegalArgumentException("invalid weekly reward");
+                        Item registered=BuiltInRegistries.ITEM.getValue(id);
+                        if(registered!=null&&registered!=net.minecraft.world.item.Items.AIR&&count>new ItemStack(registered).getMaxStackSize())
+                            throw new IllegalArgumentException("reward stack too large");
+                        loadedWeek[d][i]=new Reward(item,count,desc);
                     }
-                    loadedRewards[i] = new Reward(item, count, description);
+                }
+            } else if(root.has("rewards")) {
+                // Migrate the old four-reward config to today's weekday.
+                JsonArray old=root.getAsJsonArray("rewards");
+                int d=LocalDate.now(loadedZone).getDayOfWeek().getValue()-1;
+                for(int i=0;i<Math.min(4,old.size());i++) {
+                    JsonObject v=old.get(i).getAsJsonObject();
+                    String item=i==3?"vmtrade:vmcoin":v.has("item")?v.get("item").getAsString():WEEKLY_ITEMS[d][i];
+                    int count=i==3?1:v.has("count")?v.get("count").getAsInt():WEEKLY_COUNTS[d][i];
+                    loadedWeek[d][i]=new Reward(item,count,descriptionFor(item));
                 }
             }
+            int todayIndex=LocalDate.now(loadedZone).getDayOfWeek().getValue()-1;
+            System.arraycopy(loadedWeek[todayIndex],0,loadedRewards,0,4);
             if (root.has("players")) {
                 for (JsonElement element : root.getAsJsonArray("players")) {
                     JsonObject value = element.getAsJsonObject();
@@ -483,9 +536,11 @@ public final class PlaytimeRewards implements ModInitializer {
 
             PLAYERS.clear();
             PLAYERS.putAll(loadedPlayers);
+            for(int d=0;d<7;d++) System.arraycopy(loadedWeek[d],0,WEEKLY_REWARDS[d],0,4);
             System.arraycopy(loadedRewards, 0, REWARDS, 0, REWARDS.length);
             System.arraycopy(loadedThresholds, 0, THRESHOLDS, 0, THRESHOLDS.length);
             resetZone = loadedZone;
+            activeDay = todayIndex;
             dataLoadFailed = false;
             return true;
         } catch (Exception exception) {
@@ -502,15 +557,20 @@ public final class PlaytimeRewards implements ModInitializer {
         JsonArray thresholds = new JsonArray();
         for (int threshold : THRESHOLDS) thresholds.add(threshold);
         root.add("thresholds", thresholds);
-        JsonArray rewards = new JsonArray();
-        for (Reward reward : REWARDS) {
-            JsonObject value = new JsonObject();
-            value.addProperty("item", reward.itemId);
-            value.addProperty("count", reward.count);
-            value.addProperty("description", reward.description);
-            rewards.add(value);
+        JsonArray week = new JsonArray();
+        for(int d=0;d<7;d++) {
+            JsonArray day=new JsonArray();
+            for(int i=0;i<4;i++) {
+                Reward reward=i==3?new Reward("vmtrade:vmcoin",1,VMCOIN_DESCRIPTION):WEEKLY_REWARDS[d][i];
+                JsonObject value=new JsonObject();
+                value.addProperty("item",reward.itemId);
+                value.addProperty("count",reward.count);
+                value.addProperty("description",reward.description);
+                day.add(value);
+            }
+            week.add(day);
         }
-        root.add("rewards", rewards);
+        root.add("weeklyRewards",week);
         JsonArray players = new JsonArray();
         PLAYERS.forEach((uuid, record) -> {
             JsonObject value = new JsonObject();
