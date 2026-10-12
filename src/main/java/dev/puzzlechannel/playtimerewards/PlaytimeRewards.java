@@ -115,12 +115,14 @@ public final class PlaytimeRewards implements ModInitializer {
                                                         context.getSource().sendFailure(Component.literal("Количество превышает максимальный размер стака предмета: " + held.getMaxStackSize() + "."));
                                                         return 0;
                                                     }
+                                                    Reward previousReward = REWARDS[index];
                                                     REWARDS[index] = new Reward(BuiltInRegistries.ITEM.getKey(held.getItem()).toString(), count);
                                                     if (saveData()) {
                                                         broadcastState();
                                                         context.getSource().sendSuccess(() -> Component.literal(
                                                                 "Награда " + (index + 1) + " изменена: " + REWARDS[index].itemId + " x" + count), true);
                                                     } else {
+                                                        REWARDS[index] = previousReward;
                                                         context.getSource().sendFailure(Component.literal("Не удалось сохранить данные. Проверь файл конфигурации и latest.log."));
                                                         return 0;
                                                     }
@@ -168,6 +170,20 @@ public final class PlaytimeRewards implements ModInitializer {
                                             context.getSource().sendSuccess(() -> Component.literal("Ежедневный сброс настроен по часовому поясу " + resetZone + "."), true);
                                             return 1;
                                         })))
+                        .then(Commands.literal("status")
+                                .executes(context -> {
+                                    context.getSource().sendSuccess(() -> Component.literal("Сброс: " + resetZone + "; пороги: " +
+                                            THRESHOLDS[0] + ", " + THRESHOLDS[1] + ", " + THRESHOLDS[2] + ", " + THRESHOLDS[3] + " сек."), false);
+                                    if (server != null) {
+                                        for (ServerPlayer online : server.getPlayerList().getPlayers()) {
+                                            PlayerRecord record = getRecord(online);
+                                            int claimed = Integer.bitCount(record.claimedMask & 0b1111);
+                                            context.getSource().sendSuccess(() -> Component.literal(online.getGameProfile().getName() +
+                                                    " — " + record.seconds + " сек., получено наград: " + claimed + "/4"), false);
+                                        }
+                                    }
+                                    return 1;
+                                }))
                         .then(Commands.literal("reload")
                                 .executes(context -> {
                                     boolean loaded = loadData();
