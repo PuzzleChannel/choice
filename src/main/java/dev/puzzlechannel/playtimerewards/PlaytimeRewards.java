@@ -6,12 +6,14 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -25,7 +27,9 @@ import net.minecraft.world.item.ItemStack;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -38,26 +42,25 @@ public final class PlaytimeRewards implements ModInitializer {
             "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmutcoin"
     };
     private static final int[] DEFAULT_COUNTS = {12, 1, 1, 1};
-
     private static final Map<UUID, PlayerRecord> PLAYERS = new HashMap<>();
     private static final Reward[] REWARDS = new Reward[4];
     private static Path dataPath;
     private static MinecraftServer server;
+    private static ZoneId resetZone = ZoneId.systemDefault();
     private static int tickCounter;
+    private static boolean dataLoadFailed;
 
     private static final class PlayerRecord {
         int seconds;
         int claimedMask;
-        String date = LocalDate.now().toString();
+        String date = LocalDate.now(resetZone).toString();
     }
 
     private record Reward(String itemId, int count) { }
 
     @Override
     public void onInitialize() {
-        for (int i = 0; i < REWARDS.length; i++) {
-            REWARDS[i] = new Reward(DEFAULT_ITEMS[i], DEFAULT_COUNTS[i]);
-        }
+        for (int i = 0; i < REWARDS.length; i++) REWARDS[i] = new Reward(DEFAULT_ITEMS[i], DEFAULT_COUNTS[i]);
 
         PayloadTypeRegistry.clientboundPlay().register(PlaytimePayloads.STATE_TYPE, PlaytimePayloads.State.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(PlaytimePayloads.CLAIM_TYPE, PlaytimePayloads.Claim.CODEC);
@@ -72,6 +75,9 @@ public final class PlaytimeRewards implements ModInitializer {
             saveData();
             server = null;
         });
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, s) -> s.execute(() ->
+                sendState(handler.player, getRecord(handler.player))));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, s) -> saveData());
 
         ServerTickEvents.END_SERVER_TICK.register(s -> {
             if (server == null) server = s;
@@ -82,8 +88,9 @@ public final class PlaytimeRewards implements ModInitializer {
                     record.seconds = Math.min(record.seconds + 1, 86400);
                     sendState(player, record);
                 }
-                saveData();
             }
+            // Avoid writing the JSON file every second; save periodically and on disconnect/shutdown.
+            if (tickCounter % 1200 == 0) saveData();
         });
 
         ServerPlayNetworking.registerGlobalReceiver(PlaytimePayloads.CLAIM_TYPE, (payload, context) ->
@@ -109,31 +116,81 @@ public final class PlaytimeRewards implements ModInitializer {
                                                         return 0;
                                                     }
                                                     REWARDS[index] = new Reward(BuiltInRegistries.ITEM.getKey(held.getItem()).toString(), count);
-                                                    saveData();
-                                                    context.getSource().sendSuccess(() -> Component.literal(
-                                                            "Награда " + (index + 1) + " изменена: " + REWARDS[index].itemId + " x" + count), true);
-                                                    for (ServerPlayer online : server.getPlayerList().getPlayers()) {
-                                                        sendState(online, getRecord(online));
+                                                    if (saveData()) {
+                                                        broadcastState();
+                                                        context.getSource().sendSuccess(() -> Component.literal(
+                                                                "Награда " + (index + 1) + " изменена: " + REWARDS[index].itemId + " x" + count), true);
+                                                    } else {
+                                                        context.getSource().sendFailure(Component.literal("Не удалось сохранить данные. Проверь файл конфигурации и latest.log."));
+                                                        return 0;
                                                     }
                                                     return 1;
                                                 }))))
+                        .then(Commands.literal("threshold")
+                                .then(Commands.argument("reward", IntegerArgumentType.integer(1, 4))
+                                        .then(Commands.argument("seconds", IntegerArgumentType.integer(60, 86400))
+                                                .executes(context -> {
+                                                    int index = IntegerArgumentType.getInteger(context, "reward") - 1;
+                                                    int seconds = IntegerArgumentType.getInteger(context, "seconds");
+                                                    int previous = index == 0 ? 0 : THRESHOLDS[index - 1];
+                                                    int next = index == 3 ? 86401 : THRESHOLDS[index + 1];
+                                                    if (seconds <= previous || seconds >= next) {
+                                                        context.getSource().sendFailure(Component.literal("Порог должен быть строго между соседними порогами (" + previous + " и " + (next == 86401 ? 86400 : next) + " секунд)."));
+                                                        return 0;
+                                                    }
+                                                    int old = THRESHOLDS[index];
+                                                    THRESHOLDS[index] = seconds;
+                                                    if (!saveData()) {
+                                                        THRESHOLDS[index] = old;
+                                                        context.getSource().sendFailure(Component.literal("Не удалось сохранить настройки."));
+                                                        return 0;
+                                                    }
+                                                    broadcastState();
+                                                    context.getSource().sendSuccess(() -> Component.literal("Порог награды " + (index + 1) + ": " + seconds + " сек."), true);
+                                                    return 1;
+                                                }))))
+                        .then(Commands.literal("timezone")
+                                .then(Commands.argument("zone", StringArgumentType.word())
+                                        .executes(context -> {
+                                            String raw = StringArgumentType.getString(context, "zone");
+                                            ZoneId old = resetZone;
+                                            try {
+                                                resetZone = ZoneId.of(raw);
+                                            } catch (Exception exception) {
+                                                context.getSource().sendFailure(Component.literal("Неизвестный часовой пояс. Пример: Europe/Stockholm или UTC."));
+                                                return 0;
+                                            }
+                                            if (!saveData()) {
+                                                resetZone = old;
+                                                context.getSource().sendFailure(Component.literal("Не удалось сохранить настройки."));
+                                                return 0;
+                                            }
+                                            context.getSource().sendSuccess(() -> Component.literal("Ежедневный сброс настроен по часовому поясу " + resetZone + "."), true);
+                                            return 1;
+                                        })))
                         .then(Commands.literal("reload")
                                 .executes(context -> {
-                                    loadData();
-                                    context.getSource().sendSuccess(() -> Component.literal("Настройки наград загружены."), true);
-                                    return 1;
+                                    boolean loaded = loadData();
+                                    if (loaded) {
+                                        broadcastState();
+                                        context.getSource().sendSuccess(() -> Component.literal("Настройки и данные загружены."), true);
+                                        return 1;
+                                    }
+                                    context.getSource().sendFailure(Component.literal("Файл данных повреждён или недоступен. Он не перезаписан; исправь JSON или восстанови .bak."));
+                                    return 0;
                                 }))
                         .then(Commands.literal("save")
                                 .executes(context -> {
-                                    saveData();
-                                    context.getSource().sendSuccess(() -> Component.literal("Данные игрового времени сохранены."), true);
-                                    return 1;
+                                    boolean saved = saveData();
+                                    if (saved) context.getSource().sendSuccess(() -> Component.literal("Данные игрового времени сохранены."), true);
+                                    else context.getSource().sendFailure(Component.literal("Сохранение отменено, чтобы не затереть данные. Проверь latest.log и JSON."));
+                                    return saved ? 1 : 0;
                                 }))));
     }
 
     private static PlayerRecord getRecord(ServerPlayer player) {
         PlayerRecord record = PLAYERS.computeIfAbsent(player.getUUID(), ignored -> new PlayerRecord());
-        String today = LocalDate.now().toString();
+        String today = LocalDate.now(resetZone).toString();
         if (!today.equals(record.date)) {
             record.date = today;
             record.seconds = 0;
@@ -145,8 +202,22 @@ public final class PlaytimeRewards implements ModInitializer {
 
     private static void sendState(ServerPlayer player, PlayerRecord record) {
         if (ServerPlayNetworking.canSend(player, PlaytimePayloads.STATE_TYPE)) {
-            ServerPlayNetworking.send(player, new PlaytimePayloads.State(record.seconds, record.claimedMask));
+            ServerPlayNetworking.send(player, new PlaytimePayloads.State(record.seconds, record.claimedMask, encodeRewardConfig()));
         }
+    }
+
+    private static String encodeRewardConfig() {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < REWARDS.length; i++) {
+            if (i > 0) out.append(';');
+            out.append(THRESHOLDS[i]).append(',').append(REWARDS[i].itemId).append(',').append(REWARDS[i].count);
+        }
+        return out.toString();
+    }
+
+    private static void broadcastState() {
+        if (server == null) return;
+        for (ServerPlayer online : server.getPlayerList().getPlayers()) sendState(online, getRecord(online));
     }
 
     private static void claimReward(ServerPlayer player, int index) {
@@ -169,19 +240,21 @@ public final class PlaytimeRewards implements ModInitializer {
             player.sendSystemMessage(Component.literal("Предмет награды недоступен: " + reward.itemId + ". Проверь, загружен ли нужный мод."));
             return;
         }
-
         ItemStack stack = new ItemStack(item, reward.count);
         if (!hasRoom(player, stack)) {
             player.sendSystemMessage(Component.literal("Освободи место в инвентаре, затем забери награду."));
             return;
         }
 
-        // Persist the claim before inventory mutation to prevent duplicate claims after a crash.
         record.claimedMask |= bit;
-        saveData();
+        if (!saveData()) {
+            record.claimedMask &= ~bit;
+            player.sendSystemMessage(Component.literal("Награда не выдана: не удалось сохранить отметку о получении."));
+            sendState(player, record);
+            return;
+        }
         boolean inserted = player.getInventory().add(stack);
         if (!inserted || !stack.isEmpty()) {
-            // The preflight capacity check should prevent this; never drop leftovers into the world.
             record.claimedMask &= ~bit;
             saveData();
             player.sendSystemMessage(Component.literal("Не удалось выдать предмет. Попробуй освободить место в инвентаре."));
@@ -195,32 +268,51 @@ public final class PlaytimeRewards implements ModInitializer {
     private static boolean hasRoom(ServerPlayer player, ItemStack incoming) {
         int remaining = incoming.getCount();
         var inventory = player.getInventory();
-        // Inventory.add() inserts only into the 36 main inventory slots, not armor/offhand.
         for (int i = 0; i < 36; i++) {
             ItemStack existing = inventory.getItem(i);
-            if (existing.isEmpty()) {
-                remaining -= incoming.getMaxStackSize();
-            } else if (ItemStack.isSameItemSameComponents(existing, incoming)) {
+            if (existing.isEmpty()) remaining -= incoming.getMaxStackSize();
+            else if (ItemStack.isSameItemSameComponents(existing, incoming))
                 remaining -= Math.max(0, existing.getMaxStackSize() - existing.getCount());
-            }
             if (remaining <= 0) return true;
         }
         return false;
     }
 
-    private static void loadData() {
-        PLAYERS.clear();
-        if (dataPath == null || !Files.exists(dataPath)) return;
+    private static boolean loadData() {
+        if (dataPath == null) return false;
+        if (!Files.exists(dataPath)) {
+            PLAYERS.clear();
+            dataLoadFailed = false;
+            return true;
+        }
         try {
             JsonObject root = GSON.fromJson(Files.readString(dataPath), JsonObject.class);
-            if (root == null) return;
+            if (root == null) throw new IllegalStateException("empty JSON");
+            Map<UUID, PlayerRecord> loadedPlayers = new HashMap<>();
+            Reward[] loadedRewards = REWARDS.clone();
+            int[] loadedThresholds = THRESHOLDS.clone();
+            ZoneId loadedZone = resetZone;
+
+            if (root.has("timezone")) loadedZone = ZoneId.of(root.get("timezone").getAsString());
+            if (root.has("thresholds")) {
+                JsonArray values = root.getAsJsonArray("thresholds");
+                if (values.size() != 4) throw new IllegalArgumentException("thresholds must contain 4 values");
+                for (int i = 0; i < 4; i++) loadedThresholds[i] = values.get(i).getAsInt();
+                for (int i = 0; i < 4; i++) {
+                    if (loadedThresholds[i] < 60 || loadedThresholds[i] > 86400 ||
+                            (i > 0 && loadedThresholds[i] <= loadedThresholds[i - 1]))
+                        throw new IllegalArgumentException("invalid threshold order");
+                }
+            }
             if (root.has("rewards")) {
                 JsonArray rewards = root.getAsJsonArray("rewards");
-                for (int i = 0; i < Math.min(rewards.size(), REWARDS.length); i++) {
+                for (int i = 0; i < Math.min(rewards.size(), loadedRewards.length); i++) {
                     JsonObject value = rewards.get(i).getAsJsonObject();
                     String item = value.has("item") ? value.get("item").getAsString() : DEFAULT_ITEMS[i];
                     int count = value.has("count") ? value.get("count").getAsInt() : DEFAULT_COUNTS[i];
-                    if (count >= 1 && count <= 64 && Identifier.tryParse(item) != null) REWARDS[i] = new Reward(item, count);
+                    if (count < 1 || count > 64 || Identifier.tryParse(item) == null)
+                        throw new IllegalArgumentException("invalid reward " + (i + 1));
+                    loadedRewards[i] = new Reward(item, count);
                 }
             }
             if (root.has("players")) {
@@ -231,17 +323,31 @@ public final class PlaytimeRewards implements ModInitializer {
                     record.seconds = Math.max(0, Math.min(86400, value.get("seconds").getAsInt()));
                     record.claimedMask = value.get("claimed").getAsInt() & 0b1111;
                     record.date = value.get("date").getAsString();
-                    PLAYERS.put(uuid, record);
+                    loadedPlayers.put(uuid, record);
                 }
             }
+
+            PLAYERS.clear();
+            PLAYERS.putAll(loadedPlayers);
+            System.arraycopy(loadedRewards, 0, REWARDS, 0, REWARDS.length);
+            System.arraycopy(loadedThresholds, 0, THRESHOLDS, 0, THRESHOLDS.length);
+            resetZone = loadedZone;
+            dataLoadFailed = false;
+            return true;
         } catch (Exception exception) {
-            System.err.println("[Daily Playtime Rewards] Failed to load data: " + exception.getMessage());
+            dataLoadFailed = true;
+            System.err.println("[Daily Playtime Rewards] Data load failed; refusing to overwrite file: " + exception.getMessage());
+            return false;
         }
     }
 
-    private static void saveData() {
-        if (dataPath == null) return;
+    private static boolean saveData() {
+        if (dataPath == null || dataLoadFailed) return false;
         JsonObject root = new JsonObject();
+        root.addProperty("timezone", resetZone.getId());
+        JsonArray thresholds = new JsonArray();
+        for (int threshold : THRESHOLDS) thresholds.add(threshold);
+        root.add("thresholds", thresholds);
         JsonArray rewards = new JsonArray();
         for (Reward reward : REWARDS) {
             JsonObject value = new JsonObject();
@@ -264,14 +370,19 @@ public final class PlaytimeRewards implements ModInitializer {
             Files.createDirectories(dataPath.getParent());
             Path temporary = dataPath.resolveSibling(dataPath.getFileName() + ".tmp");
             Files.writeString(temporary, GSON.toJson(root));
-            try {
-                Files.move(temporary, dataPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException ignored) {
-                Files.move(temporary, dataPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            if (Files.exists(dataPath)) {
+                Path backup = dataPath.resolveSibling(dataPath.getFileName() + ".bak");
+                Files.copy(dataPath, backup, StandardCopyOption.REPLACE_EXISTING);
             }
+            try {
+                Files.move(temporary, dataPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException ignored) {
+                Files.move(temporary, dataPath, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return true;
         } catch (IOException exception) {
             System.err.println("[Daily Playtime Rewards] Failed to save data: " + exception.getMessage());
+            return false;
         }
     }
 }
