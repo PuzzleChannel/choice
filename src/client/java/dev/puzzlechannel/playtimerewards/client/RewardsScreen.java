@@ -1,8 +1,6 @@
 package dev.puzzlechannel.playtimerewards.client;
 
-import dev.puzzlechannel.playtimerewards.PlaytimePayloads;
 import dev.puzzlechannel.playtimerewards.PlaytimeSchedule;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -32,7 +30,7 @@ public final class RewardsScreen extends Screen {
         for (int i = 0; i < 4; i++) {
             final int index = i;
             claimButtons[i] = addRenderableWidget(Button.builder(Component.literal("ЗАБРАТЬ"), button ->
-                    ClientPlayNetworking.send(new PlaytimePayloads.Claim(index)))
+                    PlaytimeRewardsClient.requestClaim(index))
                     .bounds(0, 0, 120, 20).build());
         }
         layoutButtons();
@@ -139,7 +137,8 @@ public final class RewardsScreen extends Screen {
             int y = startY() + row * (ch + gap());
             int threshold = PlaytimeRewardsClient.threshold(i);
             boolean claimedAlready = (claimed & (1 << i)) != 0, unlocked = seconds >= threshold;
-            claimButtons[i].active = unlocked && !claimedAlready;
+            claimButtons[i].active = unlocked && !claimedAlready
+                    && !PlaytimeRewardsClient.isClaimClickCoolingDown(i);
 
             graphics.fill(x, y, x + cw, y + ch, PANEL_EDGE);
             graphics.fill(x + 1, y + 1, x + cw - 1, y + ch - 1, PANEL);
