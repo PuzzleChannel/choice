@@ -59,7 +59,7 @@ public final class RewardsScreen extends Screen {
         int available = height - margin * 2 - headerHeight() - headerCardsGap()
                 - gap() * (rows() - 1);
         int perRow = available / Math.max(1, rows());
-        return Math.max(100, Math.min(166, perRow));
+        return Math.max(110, Math.min(166, perRow));
     }
     private int verticalMargin() { return height < 300 ? 8 : 12; }
     private int headerHeight() { return height < 300 ? 64 : height < 380 ? 74 : 82; }
@@ -165,7 +165,8 @@ public final class RewardsScreen extends Screen {
             if (smallCards) {
                 // In short windows, prioritise the item, timer, status and claim button;
                 // the progress strip is hidden rather than overlapping the button.
-                thresholdY = Math.min(thresholdY, ch - buttonHeight() - buttonBottomPadding() - 40);
+                int compactButtonY = ch - buttonHeight() - buttonBottomPadding();
+                thresholdY = Math.min(thresholdY, compactButtonY - 29);
                 statusY = thresholdY + 15;
                 progressY = -1;
             } else {
