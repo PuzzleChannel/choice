@@ -24,7 +24,7 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
     private static int clientTickCounter;
     private static volatile int[] thresholds = {1800, 3600, 7200, 14400};
     private static volatile String[] itemIds = {
-            "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmutcoin"
+            "minecraft:bread", "minecraft:water_bucket", "minecraft:golden_apple", "vmtrade:vmcoin"
     };
     private static volatile int[] counts = {12, 1, 1, 1};
     private static volatile String[] descriptions = {
