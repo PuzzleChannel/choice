@@ -7,6 +7,11 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public final class RewardsScreen extends Screen {
     private static final String[] SUBTITLES = {"НАГРАДА I", "НАГРАДА II", "НАГРАДА III", "НАГРАДА IV"};
@@ -16,6 +21,8 @@ public final class RewardsScreen extends Screen {
     private static final int ACCENT = 0xFFE58A3A;
     private static final int TEXT = 0xFFF4E8D9;
     private static final int MUTED = 0xFFB9A18D;
+    private static final String VMCOIN_ID = "vmtrade:vmutcoin";
+    private static final String VMCOIN_DESCRIPTION = "Используется для обмена на Маркете";
     private final Button[] claimButtons = new Button[4];
 
     public RewardsScreen() { super(Component.literal("Ежедневные награды")); }
@@ -77,12 +84,19 @@ public final class RewardsScreen extends Screen {
             graphics.fill(x + 1, y + 1, x + cw - 1, y + cardHeight() - 1, PANEL);
             graphics.fill(x + 1, y + 1, x + cw - 1, y + 4, ACCENT);
             graphics.centeredText(font, SUBTITLES[i], x + cw / 2, y + 10, MUTED);
-            graphics.centeredText(font, rewardTitle(i), x + cw / 2, y + 29, TEXT);
-            drawDescription(graphics, PlaytimeRewardsClient.description(i), x + 9, y + 44, cw - 18, 2);
-            graphics.centeredText(font, PlaytimeSchedule.formatDuration(threshold), x + cw / 2, y + 76, ACCENT);
+            drawRewardItem(graphics, i, x + cw / 2 - 8, y + 25);
+
+            boolean vmcoin = VMCOIN_ID.equals(PlaytimeRewardsClient.itemId(i));
+            if (vmcoin) {
+                drawDescription(graphics, VMCOIN_DESCRIPTION, x + 8, y + 45, cw - 16, 2);
+            }
+            int thresholdY = vmcoin ? y + 73 : y + 55;
+            int statusY = vmcoin ? y + 90 : y + 72;
+            int progressY = vmcoin ? y + 107 : y + 89;
+            graphics.centeredText(font, PlaytimeSchedule.formatDuration(threshold), x + cw / 2, thresholdY, ACCENT);
             String status = claimedAlready ? "ПОЛУЧЕНО" : unlocked ? "ДОСТУПНО" : "ЗАКРЫТО";
-            graphics.centeredText(font, status, x + cw / 2, y + 94, claimedAlready ? 0xFF83C783 : unlocked ? ACCENT : MUTED);
-            int bx = x + 12, by = y + 111, inner = cw - 24;
+            graphics.centeredText(font, status, x + cw / 2, statusY, claimedAlready ? 0xFF83C783 : unlocked ? ACCENT : MUTED);
+            int bx = x + 12, by = progressY, inner = cw - 24;
             graphics.fill(bx, by, bx + inner, by + 5, 0xFF171411);
             int fill = Math.min(inner, (int) (inner * Math.min(1.0, seconds / (double) threshold)));
             graphics.fill(bx, by, bx + fill, by + 5, claimedAlready ? 0xFF83C783 : ACCENT);
@@ -110,16 +124,18 @@ public final class RewardsScreen extends Screen {
         }
     }
 
-    private static String rewardTitle(int index) {
-        String id = PlaytimeRewardsClient.itemId(index);
-        String path = id.contains(":") ? id.substring(id.indexOf(':') + 1) : id;
-        String name = switch (path) {
-            case "bread" -> "Хлеб";
-            case "water_bucket" -> "Ведро воды";
-            case "golden_apple" -> "Золотое яблоко";
-            case "vmutcoin" -> "Монета VMTrade";
-            default -> path.replace('_', ' ');
-        };
-        return name + " ×" + PlaytimeRewardsClient.count(index);
+    private void drawRewardItem(GuiGraphicsExtractor graphics, int index, int x, int y) {
+        Identifier id = Identifier.tryParse(PlaytimeRewardsClient.itemId(index));
+        Item item = id == null ? Items.AIR : BuiltInRegistries.ITEM.getValue(id);
+        int count = PlaytimeRewardsClient.count(index);
+        if (item == null || item == Items.AIR) {
+            graphics.centeredText(font, "?", x + 8, y + 4, MUTED);
+            return;
+        }
+
+        ItemStack stack = new ItemStack(item, count);
+        graphics.item(stack, x, y);
+        // Pass a custom count label so even single-item rewards display “1”.
+        graphics.itemDecorations(font, stack, x, y, Integer.toString(count));
     }
 }
