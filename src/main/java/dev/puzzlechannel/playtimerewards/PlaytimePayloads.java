@@ -12,10 +12,11 @@ public final class PlaytimePayloads {
     public static final CustomPacketPayload.Type<Claim> CLAIM_TYPE =
             new CustomPacketPayload.Type<>(Identifier.parse("daily_playtime_rewards:claim"));
 
-    public record State(int seconds, int claimedMask) implements CustomPacketPayload {
+    public record State(int seconds, int claimedMask, String rewardConfig) implements CustomPacketPayload {
         public static final StreamCodec<RegistryFriendlyByteBuf, State> CODEC = StreamCodec.composite(
                 ByteBufCodecs.VAR_INT, State::seconds,
                 ByteBufCodecs.VAR_INT, State::claimedMask,
+                ByteBufCodecs.STRING_UTF8, State::rewardConfig,
                 State::new
         );
 
