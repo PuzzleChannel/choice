@@ -333,11 +333,12 @@ public final class PlaytimeRewards implements ModInitializer {
             player.sendSystemMessage(Component.literal("Предмет награды недоступен: " + reward.itemId + ". Проверь, загружен ли нужный мод."));
             return;
         }
-        ItemStack stack = new ItemStack(item, reward.count);
-        if (reward.count < 1 || reward.count > stack.getMaxStackSize()) {
+        ItemStack prototype = new ItemStack(item);
+        if (reward.count < 1 || reward.count > prototype.getMaxStackSize()) {
             player.sendSystemMessage(Component.literal("Настройка награды некорректна: количество превышает размер стака предмета."));
             return;
         }
+        ItemStack stack = new ItemStack(item, reward.count);
         if (!hasRoom(player, stack)) {
             player.sendSystemMessage(Component.literal("Освободи место в инвентаре, затем забери награду."));
             return;
