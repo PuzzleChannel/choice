@@ -178,7 +178,7 @@ public final class PlaytimeRewards implements ModInitializer {
                                         for (ServerPlayer online : server.getPlayerList().getPlayers()) {
                                             PlayerRecord record = getRecord(online);
                                             int claimed = Integer.bitCount(record.claimedMask & 0b1111);
-                                            context.getSource().sendSuccess(() -> Component.literal(online.getGameProfile().getName() +
+                                            context.getSource().sendSuccess(() -> Component.literal(online.getName().getString() +
                                                     " — " + record.seconds + " сек., получено наград: " + claimed + "/4"), false);
                                         }
                                     }
