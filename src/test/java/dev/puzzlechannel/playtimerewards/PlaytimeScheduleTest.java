@@ -31,9 +31,12 @@ class PlaytimeScheduleTest {
     }
 
     @Test
-    void durationFormattingClampsNegativeValues() {
-        assertEquals("04:00:00", PlaytimeSchedule.formatDuration(14400));
-        assertEquals("00:01:05", PlaytimeSchedule.formatDuration(65));
-        assertEquals("00:00:00", PlaytimeSchedule.formatDuration(-12));
+    void durationFormattingOmitsZeroUnitsAndZeroPadding() {
+        assertEquals("4ч", PlaytimeSchedule.formatDuration(14400));
+        assertEquals("1м 5с", PlaytimeSchedule.formatDuration(65));
+        assertEquals("1ч 25м 15с", PlaytimeSchedule.formatDuration(5115));
+        assertEquals("1ч 5с", PlaytimeSchedule.formatDuration(3605));
+        assertEquals("0с", PlaytimeSchedule.formatDuration(0));
+        assertEquals("0с", PlaytimeSchedule.formatDuration(-12));
     }
 }
