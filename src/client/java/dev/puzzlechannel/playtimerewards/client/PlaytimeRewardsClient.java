@@ -2,10 +2,13 @@ package dev.puzzlechannel.playtimerewards.client;
 
 import dev.puzzlechannel.playtimerewards.PlaytimePayloads;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
@@ -25,14 +28,22 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
     };
     private static volatile int[] counts = {12, 1, 1, 1};
     private static volatile String[] descriptions = {
-            "Быстрый перекус после первых минут на сервере.",
-            "Ведро воды пригодится в путешествиях и при строительстве.",
-            "Ценное лечение для опасных вылазок и сложных боёв.",
-            "Монета для экономики сервера. Требуется мод VMTrade."
+            "",
+            "",
+            "",
+            "Используется для обмена на Маркете"
     };
 
     @Override
     public void onInitializeClient() {
+        // Used by the clickable chat notification. This opens the same screen as the P key.
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
+                dispatcher.register(ClientCommands.literal("dailyrewards").executes(context -> {
+                    Minecraft client = Minecraft.getInstance();
+                    if (client.player != null) client.gui.setScreen(new RewardsScreen());
+                    return 1;
+                })));
+
         ClientPlayNetworking.registerGlobalReceiver(PlaytimePayloads.STATE_TYPE, (payload, context) ->
                 context.client().execute(() -> {
                     dailySeconds = Math.max(0, Math.min(86400, payload.seconds()));
@@ -68,7 +79,7 @@ public final class PlaytimeRewardsClient implements ClientModInitializer {
                 newCounts[i] = Integer.parseInt(fields[2]);
                 newDescriptions[i] = fields[3];
                 if (newThresholds[i] < 1 || newCounts[i] < 1 || newCounts[i] > 64 ||
-                        Identifier.tryParse(newItemIds[i]) == null || newDescriptions[i].isBlank()) return;
+                        Identifier.tryParse(newItemIds[i]) == null) return;
             }
             thresholds = newThresholds;
             itemIds = newItemIds;
