@@ -20,15 +20,15 @@ On Windows, run `gradlew.bat build` from the project root. On Linux/macOS, run `
 All commands require operator permission.
 
 - `/playtimerewards set <1-4> <count>` — set the selected reward to the item held in the main hand, with the chosen amount. The amount must fit into one stack.
-- `/playtimerewards threshold <1-4> <seconds>` — change a playtime threshold. Thresholds must stay in ascending order; minimum is 60 seconds and maximum is 86400.
+- `/playtimerewards description <1-4> <text>` — set the description shown on the selected reward card (1–180 characters).\n- `/playtimerewards threshold <1-4> <seconds>` — change a playtime threshold. Thresholds must stay in ascending order; minimum is 60 seconds and maximum is 86400.
 - `/playtimerewards timezone <zone>` — set the daily reset time zone, e.g. `Europe/Stockholm` or `UTC`.
 - `/playtimerewards status` — show the reset time zone, thresholds, and playtime/claimed-reward counts for online players.
 - `/playtimerewards save` — save current data.
 - `/playtimerewards reload` — reload the saved data.
 
-The reward screen opens with **P** by default (change it in Controls). Reward item names/counts and thresholds are synchronized from the server, so changing a reward updates the UI without resetting player timers or claims.
+The reward screen opens with **P** by default (change it in Controls). Each reward card shows its description, item count, required playtime, progress and claim status. The top of the screen shows a live countdown to the next daily reset in the configured time zone. Reward item names/counts, descriptions and thresholds are synchronized from the server, so changes update the UI without resetting player timers or claims.
 
-## Data and safety
+## Automated tests\n\nRun `gradlew.bat test` on Windows or `./gradlew test` on Linux/macOS. JUnit tests cover countdown calculation in the configured time zone (including daylight-saving transitions), threshold validation, and duration formatting. The full `build` task runs these tests automatically.\n\n## Data and safety
 Data is stored in `config/daily-playtime-rewards.json`. The file contains the time zone, thresholds, reward definitions, and player records. Before each successful replacement, the previous file is copied to `daily-playtime-rewards.json.bak`.
 
 Playtime is counted on the server while a player is online. Daily progress and claims reset using the configured time zone. The server validates every claim and checks inventory space; a claim is persisted before inventory delivery to prevent duplicate claims. If the data JSON cannot be parsed, saving is blocked rather than overwriting it with empty data. Fix the JSON or restore the `.bak` file, then use `/playtimerewards reload`.
